@@ -1,0 +1,13 @@
+[package]
+name = "repolyze-git"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+repolyze-core = { path = "../repolyze-core" }
+anyhow.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

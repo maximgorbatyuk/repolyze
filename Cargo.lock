@@ -669,6 +669,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "repolyze-git"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "repolyze-core",
+ "tempfile",
+]
+
+[[package]]
 name = "repolyze-tui"
 version = "0.1.0"
 dependencies = [
