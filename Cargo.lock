@@ -741,6 +741,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "repolyze-report"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "repolyze-core",
+ "serde_json",
+]
+
+[[package]]
 name = "repolyze-tui"
 version = "0.1.0"
 dependencies = [
