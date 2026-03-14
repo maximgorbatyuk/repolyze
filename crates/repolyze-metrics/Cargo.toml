@@ -1,0 +1,13 @@
+[package]
+name = "repolyze-metrics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+repolyze-core = { path = "../repolyze-core" }
+ignore = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
