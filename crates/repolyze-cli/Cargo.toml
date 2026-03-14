@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 clap.workspace = true
 anyhow.workspace = true
+repolyze-tui = { path = "../repolyze-tui" }
 
 [dev-dependencies]
 assert_cmd = "2"
