@@ -23,6 +23,8 @@ repolyze -V
 ## Project Docs
 
 - Development guide: [`docs/development.md`](docs/development.md)
+- Features and known issues: [`FEATURES.md`](FEATURES.md)
+- Privacy policy: [`PRIVACY-POLICY.md`](PRIVACY-POLICY.md)
 - Release guide: [`docs/release.md`](docs/release.md)
 - Homebrew guide: [`docs/homebrew.md`](docs/homebrew.md)
 
