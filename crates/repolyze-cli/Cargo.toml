@@ -1,5 +1,7 @@
 [package]
 name = "repolyze-cli"
+description = "Repository analytics for local Git repositories"
+homepage = "https://github.com/maximgorbatyuk/repolyze"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

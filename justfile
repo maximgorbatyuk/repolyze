@@ -22,6 +22,9 @@ verify:
 build:
     cargo build --workspace --release
 
+dist-plan:
+    cargo dist plan
+
 release-dry-run version:
     cargo xtask release --dry-run --version {{version}}
 
