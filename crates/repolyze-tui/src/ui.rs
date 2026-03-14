@@ -98,7 +98,7 @@ fn draw_home(frame: &mut Frame, app: &AppState, area: Rect) {
             ("  ", Style::default())
         };
 
-        let label = format!("{prefix}{number}. {item:<12}");
+        let label = format!("{prefix}{number}. {item:<12}  ");
         let desc = item.description();
 
         lines.push(Line::from(vec![
