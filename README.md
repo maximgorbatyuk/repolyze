@@ -10,10 +10,11 @@ The initial product scope focuses on:
 - language-agnostic repository size comparison
 - JSON and Markdown report output
 
-## Planning Docs
+## Project Docs
 
-- Design: [`docs/plans/2026-03-14-repolyze-design.md`](docs/plans/2026-03-14-repolyze-design.md)
-- Implementation plan: [`docs/plans/2026-03-14-repolyze-implementation-plan.md`](docs/plans/2026-03-14-repolyze-implementation-plan.md)
+- Development guide: [`docs/development.md`](docs/development.md)
+- Release guide: [`docs/release.md`](docs/release.md)
+- Homebrew guide: [`docs/homebrew.md`](docs/homebrew.md)
 
 ## Tech Stack
 

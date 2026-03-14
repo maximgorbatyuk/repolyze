@@ -23,6 +23,8 @@ Domain logic lives in library crates so both TUI and CLI call the same services.
 ## Build Commands
 
 ```bash
+cargo run                                # run repolyze (dev build, launches TUI)
+cargo run -- analyze --format json       # run a subcommand during development
 cargo xtask verify                       # fmt-check + clippy + test + check (primary workflow)
 cargo build --workspace                  # build all crates
 cargo build --workspace --release        # release build
