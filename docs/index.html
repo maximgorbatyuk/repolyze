@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Repolyze — Know your code better.</title>
+  <meta name="description" content="A Rust CLI/TUI tool for analyzing local Git repositories. Contributor stats, activity heatmaps, file metrics, JSON & Markdown export.">
+  <meta property="og:title" content="Repolyze — Know your code better.">
+  <meta property="og:description" content="A Rust CLI/TUI tool for analyzing local Git repositories. Contributor stats, activity heatmaps, file metrics, JSON & Markdown export.">
+  <meta property="og:url" content="https://maximgorbatyuk.github.io/repolyze/">
+  <meta property="og:type" content="website">
+  <link rel="canonical" href="https://maximgorbatyuk.github.io/repolyze/">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:;">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90' font-family='monospace' fill='%233b82f6'>R</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap"></noscript>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f8fafc;
+      --bg-terminal: #0f172a;
+      --accent-blue: #3b82f6;
+      --accent-indigo: #6366f1;
+      --text-primary: #0f172a;
+      --text-secondary: #64748b;
+      --text-muted: #6b7280;
+      --text-terminal: #e2e8f0;
+      --prompt-green: #22c55e;
+      --border-color: #e2e8f0;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: var(--font-mono);
+      color: var(--text-primary);
+      background: var(--bg-primary);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ── Hero ── */
+
+    .hero {
+      padding: 80px 0 64px;
+      text-align: center;
+      background: var(--bg-primary);
+    }
+
+    .hero-logo {
+      color: var(--accent-blue);
+      font-size: clamp(0.45rem, 2.2vw, 0.85rem);
+      line-height: 1.2;
+      margin-bottom: 24px;
+      display: inline-block;
+      text-align: left;
+    }
+
+    .hero h1 {
+      font-size: clamp(1.25rem, 4vw, 2rem);
+      font-weight: 700;
+      margin-bottom: 16px;
+      min-height: 1.4em;
+    }
+
+    .typing-cursor::after {
+      content: '|';
+      animation: blink 1s step-end infinite;
+      color: var(--accent-blue);
+    }
+
+    @keyframes blink {
+      50% { opacity: 0; }
+    }
+
+    .hero-description {
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+      max-width: 560px;
+      margin: 0 auto 32px;
+    }
+
+    .hero-ctas {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 12px 24px;
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      text-decoration: none;
+      border-radius: 6px;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+    }
+
+    .btn-primary {
+      background: var(--accent-blue);
+      color: #fff;
+      border: 1px solid var(--accent-blue);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--accent-blue);
+      color: var(--accent-blue);
+    }
+
+    /* ── Sections ── */
+
+    section {
+      padding: 64px 0;
+    }
+
+    .bg-alt {
+      background: var(--bg-secondary);
+    }
+
+    .section-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .section-subtitle {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      margin-bottom: 40px;
+    }
+
+    /* ── Features ── */
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .feature-card {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 24px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .feature-card:hover {
+      border-color: var(--accent-blue);
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+    }
+
+    .feature-icon {
+      font-size: 1.25rem;
+      color: var(--accent-blue);
+      margin-bottom: 12px;
+    }
+
+    .feature-card h3 {
+      font-size: 0.875rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .feature-card p {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* ── Terminal windows ── */
+
+    .terminal-window {
+      background: var(--bg-terminal);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    }
+
+    .terminal-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: #1e293b;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .dot.red { background: #ef4444; }
+    .dot.yellow { background: #eab308; }
+    .dot.green { background: #22c55e; }
+
+    .terminal-title {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      margin-left: 8px;
+    }
+
+    .terminal-body {
+      padding: 16px 20px;
+    }
+
+    .terminal-body pre {
+      margin: 0;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      line-height: 1.7;
+      color: var(--text-terminal);
+      overflow-x: auto;
+    }
+
+    .terminal-body .prompt {
+      color: var(--prompt-green);
+      user-select: none;
+    }
+
+    .terminal-body .flag {
+      color: var(--accent-blue);
+    }
+
+    .terminal-body .comment {
+      color: var(--text-muted);
+    }
+
+    .terminal-body .line-num {
+      color: var(--text-muted);
+      user-select: none;
+      display: inline-block;
+      width: 2ch;
+      text-align: right;
+      margin-right: 1.5ch;
+    }
+
+    /* ── Install ── */
+
+    .install-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .install-label {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      font-weight: 700;
+    }
+
+    .install-note {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 24px;
+      text-align: center;
+    }
+
+    /* ── Usage ── */
+
+    .usage-examples {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .usage-label {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    /* ── Demo placeholder ── */
+
+    .demo-placeholder {
+      text-align: center;
+      padding: 48px 24px;
+    }
+
+    .demo-placeholder pre {
+      display: inline-block;
+      text-align: left;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+
+    .demo-placeholder a {
+      color: var(--accent-blue);
+      text-decoration: none;
+    }
+
+    .demo-placeholder a:hover {
+      text-decoration: underline;
+    }
+
+    /* ── Footer ── */
+
+    footer {
+      background: var(--bg-terminal);
+      color: var(--text-muted);
+      padding: 40px 0;
+      font-size: 0.8rem;
+      text-align: center;
+      line-height: 2;
+    }
+
+    footer a {
+      color: var(--accent-blue);
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+
+    .footer-privacy {
+      color: var(--text-terminal);
+      margin-top: 16px;
+      font-size: 0.75rem;
+    }
+
+    .back-to-top {
+      display: inline-block;
+      margin-top: 16px;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.75rem;
+    }
+
+    .back-to-top:hover {
+      color: var(--accent-blue);
+    }
+
+    /* ── Animations ── */
+
+    .animate-on-scroll {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.5s ease, transform 0.5s ease;
+    }
+
+    .animate-on-scroll.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ── Focus styles ── */
+
+    a:focus-visible, .btn:focus-visible {
+      outline: 2px solid var(--accent-blue);
+      outline-offset: 2px;
+    }
+
+    /* ── Skip nav ── */
+
+    .skip-link {
+      position: absolute;
+      top: -40px;
+      left: 0;
+      z-index: 100;
+      padding: 8px 16px;
+      background: var(--accent-blue);
+      color: #fff;
+      text-decoration: none;
+      font-size: 0.8rem;
+    }
+
+    .skip-link:focus {
+      top: 0;
+    }
+
+    /* ── Responsive ── */
+
+    @media (max-width: 768px) {
+      .hero {
+        padding: 48px 0 40px;
+      }
+
+      .features-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .install-grid {
+        grid-template-columns: 1fr;
+      }
+
+      section {
+        padding: 48px 0;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .typing-cursor::after { animation: none; opacity: 1; }
+      .animate-on-scroll {
+        opacity: 1;
+        transform: none;
+        transition: none;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <a href="#main" class="skip-link">Skip to main content</a>
+
+  <!-- Hero -->
+  <header class="hero" id="top">
+    <div class="container">
+      <pre class="hero-logo" role="img" aria-label="Repolyze">  ____                  _
+ |  _ \ ___ _ __   ___ | |_   _ _______
+ | |_) / _ \ '_ \ / _ \| | | | |_  / _ \
+ |  _ &lt;  __/ |_) | (_) | | |_| |/ /  __/
+ |_| \_\___| .__/ \___/|_|\__, /___\___|
+            |_|            |___/</pre>
+      <h1><span class="typing-cursor" data-typing="Know your code better.">Know your code better.</span></h1>
+      <p class="hero-description">
+        A Rust CLI/TUI tool for analyzing local Git repositories.<br>
+        Contributor stats. Activity heatmaps. File metrics. Zero config.
+      </p>
+      <div class="hero-ctas">
+        <a href="#install" class="btn btn-primary">$ brew install repolyze</a>
+        <a href="https://github.com/maximgorbatyuk/repolyze" class="btn btn-secondary" target="_blank" rel="noopener">View on GitHub &rarr;</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+
+    <!-- Features -->
+    <section class="bg-alt">
+      <div class="container">
+        <h2 class="section-title">Features</h2>
+        <p class="section-subtitle">Everything runs locally. No data leaves your machine.</p>
+        <div class="features-grid">
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon" aria-hidden="true">[&gt;_]</div>
+            <h3>Multi-Repo Analysis</h3>
+            <p>Analyze one or many repositories in a single run. Batch processing with partial failure tolerance.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon" aria-hidden="true">{usr}</div>
+            <h3>Contributor Stats</h3>
+            <p>Commits, lines added/deleted, net contribution, files touched, and active days per contributor.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon" aria-hidden="true">[##]</div>
+            <h3>Activity Heatmaps</h3>
+            <p>Commit activity by hour and weekday, rendered as a 7&times;24 heatmap matrix.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon" aria-hidden="true">&lt;/&gt;</div>
+            <h3>File Metrics</h3>
+            <p>.gitignore-aware file counting: lines, bytes, extension breakdowns, largest files.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon" aria-hidden="true">[=&gt;]</div>
+            <h3>JSON &amp; Markdown Export</h3>
+            <p>Structured reports for CI pipelines, dashboards, or documentation.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon" aria-hidden="true">[TUI]</div>
+            <h3>Interactive TUI</h3>
+            <p>Full-screen terminal UI with navigate-and-analyze workflow. No browser needed.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Installation -->
+    <section id="install">
+      <div class="container">
+        <h2 class="section-title">Installation</h2>
+        <p class="section-subtitle">Two ways to get started.</p>
+        <div class="install-grid">
+          <div>
+            <p class="install-label">Homebrew (macOS)</p>
+            <div class="terminal-window animate-on-scroll">
+              <div class="terminal-header" aria-hidden="true">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="terminal-title">Terminal</span>
+              </div>
+              <div class="terminal-body">
+<pre><span class="prompt">$</span> brew install maximgorbatyuk/tap/repolyze
+
+<span class="comment"># Verify installation</span>
+<span class="prompt">$</span> repolyze <span class="flag">--version</span>
+repolyze 0.1.1</pre>
+              </div>
+            </div>
+          </div>
+          <div>
+            <p class="install-label">Cargo (cross-platform)</p>
+            <div class="terminal-window animate-on-scroll">
+              <div class="terminal-header" aria-hidden="true">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="terminal-title">Terminal</span>
+              </div>
+              <div class="terminal-body">
+<pre><span class="prompt">$</span> cargo install repolyze
+
+<span class="comment"># Verify installation</span>
+<span class="prompt">$</span> repolyze <span class="flag">--version</span>
+repolyze 0.1.1</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="install-note">macOS (Apple Silicon &amp; Intel) and Linux x86_64. Built with cargo-dist.</p>
+      </div>
+    </section>
+
+    <!-- Usage -->
+    <section class="bg-alt">
+      <div class="container">
+        <h2 class="section-title">Usage</h2>
+        <p class="section-subtitle">Analyze from the command line or launch the TUI.</p>
+        <div class="usage-examples">
+
+          <div>
+            <p class="usage-label">Analyze the current directory</p>
+            <div class="terminal-window animate-on-scroll">
+              <div class="terminal-header" aria-hidden="true">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="terminal-title">~/projects/my-app</span>
+              </div>
+              <div class="terminal-body">
+<pre><span class="line-num">1</span><span class="prompt">$</span> repolyze analyze
+<span class="line-num">2</span>{
+<span class="line-num">3</span>  "repositories": [ ... ],
+<span class="line-num">4</span>  "summary": { ... }
+<span class="line-num">5</span>}</pre>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p class="usage-label">Analyze specific repos with Markdown output</p>
+            <div class="terminal-window animate-on-scroll">
+              <div class="terminal-header" aria-hidden="true">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="terminal-title">~/projects</span>
+              </div>
+              <div class="terminal-body">
+<pre><span class="line-num">1</span><span class="prompt">$</span> repolyze analyze \
+<span class="line-num">2</span>    <span class="flag">--repo</span> ./frontend \
+<span class="line-num">3</span>    <span class="flag">--repo</span> ./backend \
+<span class="line-num">4</span>    <span class="flag">--format</span> md \
+<span class="line-num">5</span>    <span class="flag">--output</span> report.md</pre>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p class="usage-label">Compare repositories side by side</p>
+            <div class="terminal-window animate-on-scroll">
+              <div class="terminal-header" aria-hidden="true">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="terminal-title">~/projects</span>
+              </div>
+              <div class="terminal-body">
+<pre><span class="line-num">1</span><span class="prompt">$</span> repolyze compare \
+<span class="line-num">2</span>    <span class="flag">--repo</span> ~/projects/api-v1 \
+<span class="line-num">3</span>    <span class="flag">--repo</span> ~/projects/api-v2</pre>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p class="usage-label">Launch the interactive TUI</p>
+            <div class="terminal-window animate-on-scroll">
+              <div class="terminal-header" aria-hidden="true">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="terminal-title">Terminal</span>
+              </div>
+              <div class="terminal-body">
+<pre><span class="line-num">1</span><span class="prompt">$</span> repolyze
+<span class="line-num">2</span><span class="comment"># or explicitly:</span>
+<span class="line-num">3</span><span class="prompt">$</span> repolyze tui</pre>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- Demo placeholder -->
+    <section>
+      <div class="container">
+        <h2 class="section-title">See it in action</h2>
+        <p class="section-subtitle">A quick look at the terminal UI.</p>
+        <div class="demo-placeholder animate-on-scroll">
+<pre>
+ &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;
+ &#9474;                                     &#9474;
+ &#9474;     Screenshots coming soon.        &#9474;
+ &#9474;     Star the repo to stay updated.  &#9474;
+ &#9474;                                     &#9474;
+ &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;
+</pre>
+          <p><a href="https://github.com/maximgorbatyuk/repolyze" target="_blank" rel="noopener">Star on GitHub &rarr;</a></p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <p>Repolyze v0.1.1 &middot; MIT License</p>
+      <p><a href="https://github.com/maximgorbatyuk/repolyze" target="_blank" rel="noopener">github.com/maximgorbatyuk/repolyze</a></p>
+      <p>Author: <a href="https://github.com/maximgorbatyuk" target="_blank" rel="noopener">maximgorbatyuk</a></p>
+      <p class="footer-privacy">Built with Rust. Analyzed locally. No data leaves your machine.</p>
+      <a href="#top" class="back-to-top" aria-label="Back to top">^ top</a>
+    </div>
+  </footer>
+
+  <script>
+    // Typing animation
+    document.addEventListener('DOMContentLoaded', () => {
+      const el = document.querySelector('[data-typing]');
+      if (!el) return;
+
+      const text = el.getAttribute('data-typing');
+      let i = 0;
+
+      // Respect reduced motion
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        el.textContent = text;
+        return;
+      }
+
+      // Clear fallback text before animating
+      el.textContent = '';
+
+      function type() {
+        if (i < text.length) {
+          el.textContent += text.charAt(i);
+          i++;
+          setTimeout(type, 50);
+        }
+      }
+
+      setTimeout(type, 400);
+    });
+
+    // Scroll-triggered fade-in
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('visible');
+              observer.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.1 });
+
+        document.querySelectorAll('.animate-on-scroll').forEach(el => {
+          observer.observe(el);
+        });
+      } else {
+        document.querySelectorAll('.animate-on-scroll').forEach(el => {
+          el.classList.add('visible');
+        });
+      }
+    });
+  </script>
+
+</body>
+</html>
