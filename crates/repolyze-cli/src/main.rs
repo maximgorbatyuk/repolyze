@@ -1,17 +1,37 @@
-use clap::Command;
+mod args;
+mod run;
+
+use std::fs;
+
+use clap::Parser;
+
+use args::{Cli, Commands};
 
 fn main() -> anyhow::Result<()> {
-    let matches = Command::new("repolyze")
-        .about("Repository analytics for local Git repositories")
-        .version(env!("CARGO_PKG_VERSION"))
-        .subcommand(Command::new("tui").about("Launch the interactive TUI"))
-        .get_matches();
+    let cli = Cli::parse();
 
-    match matches.subcommand() {
-        Some(("tui", _)) => repolyze_tui::run()?,
-        None => repolyze_tui::run()?,
-        _ => unreachable!(),
+    match cli.command {
+        Some(Commands::Tui) | None => repolyze_tui::run()?,
+        Some(Commands::Analyze(args)) => {
+            let output = run::run_analyze(&args.repos, &args.format)?;
+            write_output(&output, args.output.as_deref())?;
+        }
+        Some(Commands::Compare(args)) => {
+            let output = run::run_analyze(&args.repos, &args.format)?;
+            write_output(&output, args.output.as_deref())?;
+        }
     }
 
+    Ok(())
+}
+
+fn write_output(content: &str, path: Option<&std::path::Path>) -> anyhow::Result<()> {
+    match path {
+        Some(p) => {
+            fs::write(p, content)?;
+            eprintln!("Report written to {}", p.display());
+        }
+        None => print!("{content}"),
+    }
     Ok(())
 }
