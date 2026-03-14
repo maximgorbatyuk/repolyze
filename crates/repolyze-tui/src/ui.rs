@@ -98,11 +98,14 @@ fn draw_home(frame: &mut Frame, app: &AppState, area: Rect) {
             ("  ", Style::default())
         };
 
-        let label = format!("{prefix}{number}. {item:<12}  ");
+        let item_name = format!("{item}");
+        let padding = " ".repeat(12usize.saturating_sub(item_name.len()));
         let desc = item.description();
 
         lines.push(Line::from(vec![
-            Span::styled(label, style),
+            Span::styled(format!("{prefix}{number}. "), style),
+            Span::styled(item_name, style),
+            Span::raw(padding),
             Span::styled(desc, Style::default().fg(Color::DarkGray)),
         ]));
     }
