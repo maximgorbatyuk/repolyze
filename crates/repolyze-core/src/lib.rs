@@ -1,3 +1,4 @@
+pub mod aggregate;
 pub mod error;
 pub mod input;
 pub mod model;
