@@ -1,5 +1,5 @@
 # Homebrew formula template for repolyze (manual fallback).
-# Normally cargo-dist generates and publishes this automatically.
+# Normally cargo-dist generates and publishes this to maximgorbatyuk/homebrew-tap.
 # Use this template only if the automated publish fails.
 class Repolyze < Formula
   desc "Repository analytics for local Git repositories"

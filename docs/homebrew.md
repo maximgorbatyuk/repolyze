@@ -2,14 +2,14 @@
 
 ## Tap repository
 
-Repolyze uses a dedicated Homebrew tap at `maximgorbatyuk/homebrew-repolyze`.
+Repolyze uses a shared Homebrew tap at `maximgorbatyuk/homebrew-tap`. This tap holds formulae for all apps by this author — each formula is a separate `.rb` file inside the same repo.
 
 This tap repository must exist on GitHub before the first release. `cargo-dist` publishes the formula automatically during the release workflow.
 
 ## Installation
 
 ```bash
-brew tap maximgorbatyuk/repolyze
+brew tap maximgorbatyuk/tap
 brew install repolyze
 repolyze --help
 ```
@@ -25,7 +25,7 @@ brew upgrade repolyze
 
 ```bash
 brew uninstall repolyze
-brew untap maximgorbatyuk/repolyze
+brew untap maximgorbatyuk/tap
 ```
 
 ## How it works
@@ -36,7 +36,7 @@ During a tagged release, `cargo-dist` generates a Homebrew formula (`repolyze-cl
 - Includes the SHA256 checksum for verification
 - Installs the `repolyze` binary into the Homebrew prefix
 
-The formula is pushed to the `maximgorbatyuk/homebrew-repolyze` tap repository automatically.
+The formula is pushed to the `maximgorbatyuk/homebrew-tap` repository automatically.
 
 ## Formula fields updated per release
 
