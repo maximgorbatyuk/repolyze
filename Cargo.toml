@@ -1,5 +1,6 @@
 [workspace]
 members = ["crates/repolyze-cli", "crates/repolyze-core", "crates/repolyze-git", "crates/repolyze-metrics", "crates/repolyze-report", "crates/repolyze-tui", "xtask"]
+default-members = ["crates/repolyze-cli"]
 resolver = "2"
 
 [workspace.package]

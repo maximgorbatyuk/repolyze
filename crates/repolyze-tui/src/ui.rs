@@ -1,6 +1,6 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
@@ -8,7 +8,36 @@ use ratatui::{
 
 use crate::app::{AppState, Screen};
 
+const LOGO: &str = r#"
+  ____                  _
+ |  _ \ ___ _ __   ___ | |_   _ _______
+ | |_) / _ \ '_ \ / _ \| | | | |_  / _ \
+ |  _ <  __/ |_) | (_) | | |_| |/ /  __/
+ |_| \_\___| .__/ \___/|_|\__, /___\___|
+            |_|            |___/
+"#;
+
+const GITHUB_URL: &str = "https://github.com/maximgorbatyuk/repolyze";
+const SLOGAN: &str = "Know your code better.";
+
 pub fn draw(frame: &mut Frame, app: &AppState) {
+    match app.active_screen {
+        Screen::Home => draw_home_layout(frame, app),
+        _ => draw_standard_layout(frame, app),
+    }
+}
+
+fn draw_home_layout(frame: &mut Frame, app: &AppState) {
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(3)])
+        .split(frame.area());
+
+    draw_home(frame, app, outer[0]);
+    draw_status_bar(frame, app, outer[1]);
+}
+
+fn draw_standard_layout(frame: &mut Frame, app: &AppState) {
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(3), Constraint::Length(3)])
@@ -22,12 +51,69 @@ pub fn draw(frame: &mut Frame, app: &AppState) {
         .constraints([Constraint::Length(20), Constraint::Min(40)])
         .split(main_area);
 
-    draw_menu(frame, app, columns[0]);
+    draw_sidebar(frame, app, columns[0]);
     draw_content(frame, app, columns[1]);
     draw_status_bar(frame, app, status_area);
 }
 
-fn draw_menu(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+fn draw_home(frame: &mut Frame, app: &AppState, area: Rect) {
+    let mut lines: Vec<Line> = Vec::new();
+
+    // ASCII logo
+    for logo_line in LOGO.lines() {
+        lines.push(Line::from(Span::styled(
+            logo_line.to_string(),
+            Style::default().fg(Color::Cyan),
+        )));
+    }
+
+    // Slogan and GitHub link
+    lines.push(Line::from(vec![Span::styled(
+        format!("  {SLOGAN}"),
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::ITALIC),
+    )]));
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        format!("  {GITHUB_URL}"),
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
+    lines.push(Line::from(""));
+
+    // Menu items
+    for (i, item) in app.menu_items.iter().enumerate() {
+        let number = i + 1;
+        let is_selected = i == app.selected;
+
+        let (prefix, style) = if is_selected {
+            (
+                "\u{27a4} ", // ➤
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else {
+            ("  ", Style::default())
+        };
+
+        let label = format!("{prefix}{number}. {item:<12}");
+        let desc = item.description();
+
+        lines.push(Line::from(vec![
+            Span::styled(label, style),
+            Span::styled(desc, Style::default().fg(Color::DarkGray)),
+        ]));
+    }
+
+    let paragraph = Paragraph::new(lines)
+        .block(Block::default().borders(Borders::ALL))
+        .wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, area);
+}
+
+fn draw_sidebar(frame: &mut Frame, app: &AppState, area: Rect) {
     let items: Vec<ListItem> = app
         .menu_items
         .iter()
@@ -44,7 +130,7 @@ fn draw_menu(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
                 Style::default()
             };
 
-            let prefix = if active { "▸ " } else { "  " };
+            let prefix = if active { "\u{25b8} " } else { "  " };
             ListItem::new(Line::from(Span::styled(format!("{prefix}{item}"), style)))
         })
         .collect();
@@ -53,8 +139,9 @@ fn draw_menu(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
     frame.render_widget(menu, area);
 }
 
-fn draw_content(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+fn draw_content(frame: &mut Frame, app: &AppState, area: Rect) {
     match app.active_screen {
+        Screen::Home => {} // handled by draw_home_layout
         Screen::Help => draw_help(frame, area),
         Screen::Analyze => draw_analyze(frame, app, area),
         Screen::Compare => draw_compare(frame, app, area),
@@ -62,27 +149,28 @@ fn draw_content(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) 
     }
 }
 
-fn draw_help(frame: &mut Frame, area: ratatui::layout::Rect) {
+fn draw_help(frame: &mut Frame, area: Rect) {
     let text = "\
 Welcome to Repolyze — repository analytics for local Git repositories.
 
 Navigation:
-  j/↓       Move down in menu
-  k/↑       Move up in menu
+  j/\u{2193}       Move down in menu
+  k/\u{2191}       Move up in menu
   Enter     Activate selected item
   ?         Return to Help
+  Esc       Return to Home
   q         Quit
 
 Screens:
-  Help      This screen
   Analyze   Analyze one or more repositories
   Compare   Compare multiple repositories
+  Help      This screen
   Errors    View analysis errors
 
 In Analyze/Compare screens:
   Type a path and press Enter to add it
   Press Enter with empty input to run analysis
-  Esc       Return to menu";
+  Esc       Return to Home";
 
     let paragraph = Paragraph::new(text)
         .block(Block::default().borders(Borders::ALL).title("Help"))
@@ -90,13 +178,12 @@ In Analyze/Compare screens:
     frame.render_widget(paragraph, area);
 }
 
-fn draw_analyze(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+fn draw_analyze(frame: &mut Frame, app: &AppState, area: Rect) {
     let mut lines = vec![
         Line::from("Enter repository path(s), then press Enter with empty input to analyze."),
         Line::from(""),
     ];
 
-    // Show added paths
     for (i, path) in app.input_paths.iter().enumerate() {
         lines.push(Line::from(format!("  {}. {}", i + 1, path.display())));
     }
@@ -105,14 +192,12 @@ fn draw_analyze(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) 
         lines.push(Line::from(""));
     }
 
-    // Input prompt
     lines.push(Line::from(format!("Path: {}_", app.input_buffer)));
 
-    // Show results if available
     if let Some(report) = &app.analysis_result {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "── Results ──",
+            "\u{2500}\u{2500} Results \u{2500}\u{2500}",
             Style::default().fg(Color::Green),
         )));
         for analysis in &report.repositories {
@@ -123,7 +208,7 @@ fn draw_analyze(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) 
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| analysis.repository.root.to_string_lossy().to_string());
             lines.push(Line::from(format!(
-                "  {} — {} files, {} commits, {} contributors",
+                "  {} \u{2014} {} files, {} commits, {} contributors",
                 name,
                 analysis.size.files,
                 analysis.contributions.total_commits,
@@ -138,7 +223,7 @@ fn draw_analyze(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) 
     frame.render_widget(paragraph, area);
 }
 
-fn draw_compare(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+fn draw_compare(frame: &mut Frame, app: &AppState, area: Rect) {
     let mut lines = vec![
         Line::from("Enter 2+ repository paths, then press Enter with empty input to compare."),
         Line::from(""),
@@ -157,7 +242,7 @@ fn draw_compare(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) 
     if let Some(report) = &app.analysis_result {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "── Comparison Results ──",
+            "\u{2500}\u{2500} Comparison Results \u{2500}\u{2500}",
             Style::default().fg(Color::Green),
         )));
         lines.push(Line::from(format!(
@@ -176,7 +261,7 @@ fn draw_compare(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) 
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| analysis.repository.root.to_string_lossy().to_string());
             lines.push(Line::from(format!(
-                "    {} — {} files, {} lines, {} commits",
+                "    {} \u{2014} {} files, {} lines, {} commits",
                 name,
                 analysis.size.files,
                 analysis.size.total_lines,
@@ -191,7 +276,7 @@ fn draw_compare(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) 
     frame.render_widget(paragraph, area);
 }
 
-fn draw_errors(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+fn draw_errors(frame: &mut Frame, app: &AppState, area: Rect) {
     let mut lines = Vec::new();
 
     if app.errors.is_empty() {
@@ -201,7 +286,7 @@ fn draw_errors(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
         lines.push(Line::from(""));
         for error in &app.errors {
             lines.push(Line::from(Span::styled(
-                format!("  {} — {}", error.path.display(), error.reason),
+                format!("  {} \u{2014} {}", error.path.display(), error.reason),
                 Style::default().fg(Color::Red),
             )));
         }
@@ -213,18 +298,23 @@ fn draw_errors(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
     frame.render_widget(paragraph, area);
 }
 
-fn draw_status_bar(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
-    let screen_name = format!("{:?}", app.active_screen);
+fn draw_status_bar(frame: &mut Frame, app: &AppState, area: Rect) {
     let error_count = if app.errors.is_empty() {
         String::new()
     } else {
-        format!(" | {} error(s)", app.errors.len())
+        format!("  |  {} error(s)", app.errors.len())
     };
 
-    let status = format!(
-        " [{}] {} | q: quit | ?: help{}",
-        screen_name, app.status_message, error_count
-    );
+    let status = match app.active_screen {
+        Screen::Home => format!(" \u{2191}\u{2193}  |  Enter  |  Q Quit{}", error_count),
+        _ => {
+            let screen_name = format!("{:?}", app.active_screen);
+            format!(
+                " [{screen_name}] {}  |  Esc Home  |  Q Quit{}",
+                app.status_message, error_count
+            )
+        }
+    };
 
     let bar = Paragraph::new(status).block(
         Block::default()

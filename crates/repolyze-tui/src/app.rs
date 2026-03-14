@@ -6,39 +6,49 @@ use repolyze_core::model::{ComparisonReport, PartialFailure};
 /// Active screen in the TUI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
+    Home,
     Help,
     Analyze,
     Compare,
     Errors,
 }
 
-/// Menu items shown in the left sidebar.
+/// Menu items shown in the home screen and sidebar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuItem {
-    Help,
     Analyze,
     Compare,
+    Help,
     Errors,
+}
+
+impl MenuItem {
+    pub fn description(&self) -> &'static str {
+        match self {
+            MenuItem::Analyze => "Analyze one or more repositories",
+            MenuItem::Compare => "Compare multiple repositories",
+            MenuItem::Help => "Keybindings and usage guide",
+            MenuItem::Errors => "View analysis errors",
+        }
+    }
+
+    pub fn screen(&self) -> Screen {
+        match self {
+            MenuItem::Analyze => Screen::Analyze,
+            MenuItem::Compare => Screen::Compare,
+            MenuItem::Help => Screen::Help,
+            MenuItem::Errors => Screen::Errors,
+        }
+    }
 }
 
 impl fmt::Display for MenuItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MenuItem::Help => write!(f, "Help"),
             MenuItem::Analyze => write!(f, "Analyze"),
             MenuItem::Compare => write!(f, "Compare"),
+            MenuItem::Help => write!(f, "Help"),
             MenuItem::Errors => write!(f, "Errors"),
-        }
-    }
-}
-
-impl MenuItem {
-    pub fn screen(&self) -> Screen {
-        match self {
-            MenuItem::Help => Screen::Help,
-            MenuItem::Analyze => Screen::Analyze,
-            MenuItem::Compare => Screen::Compare,
-            MenuItem::Errors => Screen::Errors,
         }
     }
 }
@@ -82,13 +92,13 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             menu_items: vec![
-                MenuItem::Help,
                 MenuItem::Analyze,
                 MenuItem::Compare,
+                MenuItem::Help,
                 MenuItem::Errors,
             ],
             selected: 0,
-            active_screen: Screen::Help,
+            active_screen: Screen::Home,
             should_quit: false,
             analysis_result: None,
             errors: Vec::new(),
@@ -116,6 +126,11 @@ impl AppState {
         if let Some(item) = self.menu_items.get(self.selected) {
             self.active_screen = item.screen();
         }
+    }
+
+    /// Return to the home screen.
+    pub fn go_home(&mut self) {
+        self.active_screen = Screen::Home;
     }
 
     pub fn quit(&mut self) {
@@ -165,27 +180,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn starts_on_home_screen() {
+        let app = AppState::new();
+        assert_eq!(app.active_screen, Screen::Home);
+        assert_eq!(app.selected, 0);
+    }
+
+    #[test]
     fn starts_with_all_menu_items() {
         let app = AppState::new();
         assert_eq!(
             app.menu_items,
             vec![
-                MenuItem::Help,
                 MenuItem::Analyze,
                 MenuItem::Compare,
+                MenuItem::Help,
                 MenuItem::Errors,
             ]
         );
-        assert_eq!(app.selected, 0);
-        assert_eq!(app.active_screen, Screen::Help);
     }
 
     #[test]
     fn navigate_down_and_activate_analyze() {
         let mut app = AppState::new();
-        app.move_down(); // selected = 1 (Analyze)
-        assert_eq!(app.selected, 1);
-
+        // selected = 0 is Analyze
         app.activate_selected();
         assert_eq!(app.active_screen, Screen::Analyze);
     }
@@ -193,19 +211,29 @@ mod tests {
     #[test]
     fn navigate_to_compare() {
         let mut app = AppState::new();
-        app.move_down(); // Analyze
         app.move_down(); // Compare
-        assert_eq!(app.selected, 2);
+        assert_eq!(app.selected, 1);
 
         app.activate_selected();
         assert_eq!(app.active_screen, Screen::Compare);
     }
 
     #[test]
+    fn navigate_to_help() {
+        let mut app = AppState::new();
+        app.move_down(); // Compare
+        app.move_down(); // Help
+        assert_eq!(app.selected, 2);
+
+        app.activate_selected();
+        assert_eq!(app.active_screen, Screen::Help);
+    }
+
+    #[test]
     fn navigate_to_errors() {
         let mut app = AppState::new();
-        app.move_down(); // Analyze
         app.move_down(); // Compare
+        app.move_down(); // Help
         app.move_down(); // Errors
         assert_eq!(app.selected, 3);
 
@@ -234,6 +262,16 @@ mod tests {
         let mut app = AppState::new();
         app.quit();
         assert!(app.should_quit);
+    }
+
+    #[test]
+    fn go_home_returns_to_home_screen() {
+        let mut app = AppState::new();
+        app.activate_selected();
+        assert_eq!(app.active_screen, Screen::Analyze);
+
+        app.go_home();
+        assert_eq!(app.active_screen, Screen::Home);
     }
 
     #[test]
@@ -297,18 +335,22 @@ mod tests {
     }
 
     #[test]
-    fn enter_on_help_stays_on_help() {
-        let mut app = AppState::new();
-        // selected = 0 (Help)
-        app.activate_selected();
-        assert_eq!(app.active_screen, Screen::Help);
-    }
-
-    #[test]
     fn menu_item_screen_mapping() {
         assert_eq!(MenuItem::Help.screen(), Screen::Help);
         assert_eq!(MenuItem::Analyze.screen(), Screen::Analyze);
         assert_eq!(MenuItem::Compare.screen(), Screen::Compare);
         assert_eq!(MenuItem::Errors.screen(), Screen::Errors);
+    }
+
+    #[test]
+    fn menu_items_have_descriptions() {
+        for item in &[
+            MenuItem::Analyze,
+            MenuItem::Compare,
+            MenuItem::Help,
+            MenuItem::Errors,
+        ] {
+            assert!(!item.description().is_empty());
+        }
     }
 }
