@@ -1,10 +1,11 @@
 pub mod app;
+pub mod event;
 pub mod ui;
 
 use std::io;
 
 use crossterm::{
-    event::{self, Event, KeyCode},
+    event::{Event, read as read_event},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -24,13 +25,8 @@ pub fn run() -> anyhow::Result<()> {
     loop {
         terminal.draw(|frame| ui::draw(frame, &app))?;
 
-        if let Event::Key(key) = event::read()? {
-            match key.code {
-                KeyCode::Char('q') => app.quit(),
-                KeyCode::Up | KeyCode::Char('k') => app.move_up(),
-                KeyCode::Down | KeyCode::Char('j') => app.move_down(),
-                _ => {}
-            }
+        if let Event::Key(key) = read_event()? {
+            event::handle_key(&mut app, key.code);
         }
 
         if app.should_quit {

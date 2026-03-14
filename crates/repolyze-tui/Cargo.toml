@@ -7,5 +7,6 @@ repository.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-ratatui = "0.29"
 crossterm = "0.28"
+ratatui = "0.29"
+repolyze-core = { path = "../repolyze-core" }
