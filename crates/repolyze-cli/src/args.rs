@@ -10,7 +10,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 )]
 pub struct Cli {
     /// Working directory (defaults to current directory)
-    #[arg(long = "directory", short = 'C', global = true)]
+    #[arg(long = "directory", short = 'D', global = true)]
     pub directory: Option<PathBuf>,
 
     #[command(subcommand)]

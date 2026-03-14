@@ -138,7 +138,7 @@ fn analyze_with_short_directory_flag() {
 
     let mut cmd = Command::cargo_bin("repolyze").unwrap();
     cmd.args([
-        "-C",
+        "-D",
         dir.path().to_str().unwrap(),
         "analyze",
         "--format",
