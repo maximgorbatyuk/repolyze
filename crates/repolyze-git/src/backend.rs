@@ -2,6 +2,21 @@ use std::path::Path;
 use std::process::Command;
 
 use repolyze_core::error::RepolyzeError;
+use repolyze_core::model::{ActivitySummary, ContributionSummary, RepositoryTarget};
+use repolyze_core::service::GitAnalyzer;
+
+pub struct GitCliBackend;
+
+impl GitAnalyzer for GitCliBackend {
+    fn analyze_git(
+        &self,
+        target: &RepositoryTarget,
+    ) -> Result<(ContributionSummary, ActivitySummary), RepolyzeError> {
+        let (contributions, commits) = crate::contributions::analyze_contributions(target)?;
+        let activity = crate::activity::build_activity_summary(&commits);
+        Ok((contributions, activity))
+    }
+}
 
 /// Runs a git command in the given repository directory and returns stdout.
 pub fn run_git(repo: &Path, args: &[&str]) -> Result<String, RepolyzeError> {

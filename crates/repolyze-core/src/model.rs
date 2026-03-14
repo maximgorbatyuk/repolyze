@@ -95,7 +95,7 @@ pub struct ComparisonReport {
 pub struct ComparisonSummary {
     pub total_contributors: u64,
     pub total_commits: u64,
-    pub total_lines_changed: i64,
+    pub total_lines_changed: u64,
     pub total_files: u64,
 }
 

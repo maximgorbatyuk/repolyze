@@ -9,6 +9,10 @@ use clap::{Parser, Subcommand, ValueEnum};
     version
 )]
 pub struct Cli {
+    /// Working directory (defaults to current directory)
+    #[arg(long = "directory", short = 'C', global = true)]
+    pub directory: Option<PathBuf>,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
@@ -25,8 +29,8 @@ pub enum Commands {
 
 #[derive(clap::Args)]
 pub struct AnalyzeArgs {
-    /// Repository path(s) to analyze
-    #[arg(long = "repo", required = true)]
+    /// Repository path(s) to analyze (defaults to current directory)
+    #[arg(long = "repo")]
     pub repos: Vec<PathBuf>,
 
     /// Output format

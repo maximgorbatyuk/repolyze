@@ -9,3 +9,12 @@ fn prints_cli_help() {
         .success()
         .stdout(predicate::str::contains("repolyze"));
 }
+
+#[test]
+fn help_shows_directory_option() {
+    let mut cmd = Command::cargo_bin("repolyze").unwrap();
+    cmd.arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--directory"));
+}

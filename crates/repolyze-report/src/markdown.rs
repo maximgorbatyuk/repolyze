@@ -1,4 +1,6 @@
-use repolyze_core::model::ComparisonReport;
+use std::collections::HashMap;
+
+use repolyze_core::model::{ComparisonReport, ContributorStats};
 
 const WEEKDAY_NAMES: [&str; 7] = [
     "Monday",
@@ -56,16 +58,27 @@ pub fn render_markdown(report: &ComparisonReport) -> String {
     out.push_str("| Name | Email | Commits | Lines Added | Lines Deleted | Net |\n");
     out.push_str("|---|---|---|---|---|---|\n");
 
-    // Collect all contributors across repos, dedup by email (show highest commit count)
-    let mut all_contributors: Vec<_> = report
-        .repositories
-        .iter()
-        .flat_map(|a| a.contributions.contributors.iter())
-        .collect();
-    all_contributors.sort_by(|a, b| b.commits.cmp(&a.commits));
+    // Aggregate contributors by email across repos
+    let mut by_email: HashMap<String, ContributorStats> = HashMap::new();
+    for analysis in &report.repositories {
+        for c in &analysis.contributions.contributors {
+            let key = c.email.to_lowercase();
+            by_email
+                .entry(key)
+                .and_modify(|acc| {
+                    acc.commits += c.commits;
+                    acc.lines_added += c.lines_added;
+                    acc.lines_deleted += c.lines_deleted;
+                    acc.net_lines += c.net_lines;
+                    acc.files_touched += c.files_touched;
+                })
+                .or_insert_with(|| c.clone());
+        }
+    }
+    let mut merged: Vec<_> = by_email.into_values().collect();
+    merged.sort_by(|a, b| b.commits.cmp(&a.commits));
 
-    // Show top 20
-    for contributor in all_contributors.iter().take(20) {
+    for contributor in merged.iter().take(20) {
         out.push_str(&format!(
             "| {} | {} | {} | {} | {} | {} |\n",
             contributor.name,
@@ -78,28 +91,36 @@ pub fn render_markdown(report: &ComparisonReport) -> String {
     }
     out.push('\n');
 
-    // Activity by hour
+    // Activity by hour (aggregated across repos)
     out.push_str("## Activity by Hour\n\n");
     out.push_str("| Hour | Commits |\n");
     out.push_str("|---|---|\n");
+    let mut hours = [0u32; 24];
     for analysis in &report.repositories {
-        for (hour, &count) in analysis.activity.by_hour.iter().enumerate() {
-            if count > 0 {
-                out.push_str(&format!("| {:02}:00 | {} |\n", hour, count));
-            }
+        for (h, &count) in analysis.activity.by_hour.iter().enumerate() {
+            hours[h] += count;
+        }
+    }
+    for (hour, &count) in hours.iter().enumerate() {
+        if count > 0 {
+            out.push_str(&format!("| {:02}:00 | {count} |\n", hour));
         }
     }
     out.push('\n');
 
-    // Activity by weekday
+    // Activity by weekday (aggregated across repos)
     out.push_str("## Activity by Weekday\n\n");
     out.push_str("| Day | Commits |\n");
     out.push_str("|---|---|\n");
+    let mut weekdays = [0u32; 7];
     for analysis in &report.repositories {
-        for (day, &count) in analysis.activity.by_weekday.iter().enumerate() {
-            if count > 0 {
-                out.push_str(&format!("| {} | {} |\n", WEEKDAY_NAMES[day], count));
-            }
+        for (d, &count) in analysis.activity.by_weekday.iter().enumerate() {
+            weekdays[d] += count;
+        }
+    }
+    for (day, &count) in weekdays.iter().enumerate() {
+        if count > 0 {
+            out.push_str(&format!("| {} | {count} |\n", WEEKDAY_NAMES[day]));
         }
     }
     out.push('\n');
@@ -260,5 +281,30 @@ mod tests {
         let report = make_two_repo_report();
         let md = render_markdown(&report);
         assert!(!md.contains("## Failures"));
+    }
+
+    #[test]
+    fn markdown_report_aggregates_contributors_by_email_across_repos() {
+        let report = make_two_repo_report();
+        let md = render_markdown(&report);
+
+        assert_eq!(md.matches("| Alice | alice@example.com |").count(), 1);
+        assert!(md.contains("| Alice | alice@example.com | 15 | 300 | 75 | 225 |"));
+    }
+
+    #[test]
+    fn markdown_report_aggregates_activity_across_repos() {
+        let mut report = make_two_repo_report();
+        report.repositories[0].activity.by_hour[10] = 1;
+        report.repositories[0].activity.by_weekday[2] = 1;
+        report.repositories[0].activity.heatmap[2][10] = 1;
+        report.repositories[1].activity.by_hour[10] = 2;
+        report.repositories[1].activity.by_weekday[2] = 2;
+        report.repositories[1].activity.heatmap[2][10] = 2;
+
+        let md = render_markdown(&report);
+
+        assert_eq!(md.matches("| 10:00 | 3 |").count(), 1);
+        assert_eq!(md.matches("| Wednesday | 3 |").count(), 1);
     }
 }

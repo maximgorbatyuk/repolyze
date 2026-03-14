@@ -21,7 +21,7 @@ pub fn build_comparison_report(
 fn build_summary(results: &[RepositoryAnalysis]) -> ComparisonSummary {
     let mut contributor_emails: HashMap<String, &ContributorStats> = HashMap::new();
     let mut total_commits: u64 = 0;
-    let mut total_lines_changed: i64 = 0;
+    let mut total_lines_changed: u64 = 0;
     let mut total_files: u64 = 0;
 
     for analysis in results {
@@ -31,7 +31,7 @@ fn build_summary(results: &[RepositoryAnalysis]) -> ComparisonSummary {
         for contributor in &analysis.contributions.contributors {
             let email = contributor.email.to_lowercase();
             contributor_emails.entry(email).or_insert(contributor);
-            total_lines_changed += contributor.net_lines;
+            total_lines_changed += contributor.lines_added + contributor.lines_deleted;
         }
     }
 
@@ -120,6 +120,45 @@ mod tests {
         assert_eq!(report.summary.total_contributors, 2);
         assert_eq!(report.summary.total_commits, 10);
         assert_eq!(report.summary.total_lines_changed, 180);
+    }
+
+    #[test]
+    fn aggregate_total_lines_changed_counts_additions_and_deletions() {
+        let repo = RepositoryAnalysis {
+            repository: RepositoryTarget {
+                root: "/tmp/repo-a".into(),
+            },
+            contributions: ContributionSummary {
+                contributors: vec![ContributorStats {
+                    name: "Alice".to_string(),
+                    email: "alice@example.com".to_string(),
+                    commits: 2,
+                    lines_added: 10,
+                    lines_deleted: 4,
+                    net_lines: 6,
+                    files_touched: 1,
+                    active_days: 1,
+                    first_commit: "2025-01-01".to_string(),
+                    last_commit: "2025-01-02".to_string(),
+                }],
+                total_commits: 2,
+            },
+            activity: ActivitySummary::default(),
+            size: SizeMetrics {
+                files: 1,
+                directories: 1,
+                total_bytes: 10,
+                total_lines: 1,
+                non_empty_lines: 1,
+                blank_lines: 0,
+                by_extension: BTreeMap::new(),
+                largest_files: Vec::new(),
+                average_file_size: 10.0,
+            },
+        };
+
+        let report = build_comparison_report(vec![repo], vec![]);
+        assert_eq!(report.summary.total_lines_changed, 14);
     }
 
     #[test]

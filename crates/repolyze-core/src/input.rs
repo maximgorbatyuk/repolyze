@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::RepolyzeError;
-use crate::model::RepositoryTarget;
+use crate::model::{PartialFailure, RepositoryTarget};
 
 /// Resolves user-provided paths into validated `RepositoryTarget` values.
 ///
@@ -10,23 +10,55 @@ use crate::model::RepositoryTarget;
 /// - Deduplicates by canonical path
 /// - Returns error for paths that don't exist or aren't Git repositories
 pub fn resolve_inputs(paths: &[PathBuf]) -> Result<Vec<RepositoryTarget>, RepolyzeError> {
-    let mut seen = std::collections::HashSet::new();
     let mut targets = Vec::new();
 
     for path in paths {
-        let canonical = path
-            .canonicalize()
-            .map_err(|_| RepolyzeError::PathNotFound(path.clone()))?;
+        targets.push(resolve_input(path)?);
+    }
 
-        let root = find_git_root(&canonical)?;
+    Ok(dedup_targets(targets))
+}
 
-        if seen.insert(root.clone()) {
-            targets.push(RepositoryTarget { root });
+pub fn resolve_inputs_with_failures(
+    paths: &[PathBuf],
+) -> (Vec<RepositoryTarget>, Vec<PartialFailure>) {
+    let mut targets = Vec::new();
+    let mut failures = Vec::new();
+
+    for path in paths {
+        match resolve_input(path) {
+            Ok(target) => targets.push(target),
+            Err(error) => failures.push(PartialFailure {
+                path: path.clone(),
+                reason: error.to_string(),
+            }),
         }
     }
 
-    targets.sort_by(|a, b| a.root.cmp(&b.root));
-    Ok(targets)
+    (dedup_targets(targets), failures)
+}
+
+pub fn resolve_input(path: &Path) -> Result<RepositoryTarget, RepolyzeError> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|_| RepolyzeError::PathNotFound(path.to_path_buf()))?;
+
+    let root = find_git_root(&canonical)?;
+    Ok(RepositoryTarget { root })
+}
+
+fn dedup_targets(targets: Vec<RepositoryTarget>) -> Vec<RepositoryTarget> {
+    let mut seen = std::collections::HashSet::new();
+    let mut deduped = Vec::new();
+
+    for target in targets {
+        if seen.insert(target.root.clone()) {
+            deduped.push(target);
+        }
+    }
+
+    deduped.sort_by(|a, b| a.root.cmp(&b.root));
+    deduped
 }
 
 fn find_git_root(path: &Path) -> Result<PathBuf, RepolyzeError> {
@@ -127,5 +159,16 @@ mod tests {
             result.unwrap_err(),
             RepolyzeError::PathNotFound(_)
         ));
+    }
+
+    #[test]
+    fn resolve_inputs_with_failures_keeps_valid_targets() {
+        let dir = create_temp_git_repo();
+        let (targets, failures) =
+            resolve_inputs_with_failures(&[dir.path().to_path_buf(), PathBuf::from("/missing")]);
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(failures.len(), 1);
+        assert!(failures[0].reason.contains("path does not exist"));
     }
 }

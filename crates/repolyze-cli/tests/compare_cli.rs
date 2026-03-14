@@ -102,3 +102,35 @@ fn compare_outputs_json_with_multiple_repos() {
         serde_json::from_slice(&output.stdout).expect("valid JSON output");
     assert_eq!(json["repositories"].as_array().unwrap().len(), 2);
 }
+
+#[test]
+fn compare_reports_invalid_repo_as_failure() {
+    let repo = create_fixture_repo("repo-a");
+
+    let output = Command::cargo_bin("repolyze")
+        .unwrap()
+        .args([
+            "compare",
+            "--repo",
+            repo.path().to_str().unwrap(),
+            "--repo",
+            "/nonexistent/path",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("valid JSON output");
+    assert_eq!(json["repositories"].as_array().unwrap().len(), 1);
+    assert_eq!(json["failures"].as_array().unwrap().len(), 1);
+    assert!(
+        json["failures"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("path does not exist")
+    );
+}
