@@ -16,7 +16,14 @@ test:
 check:
     cargo check --workspace --all-targets
 
-verify: fmt-check lint test
+verify:
+    cargo xtask verify
 
 build:
     cargo build --workspace --release
+
+release-dry-run version:
+    cargo xtask release --dry-run --version {{version}}
+
+release version:
+    cargo xtask release --version {{version}}
