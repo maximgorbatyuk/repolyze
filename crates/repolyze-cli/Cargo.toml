@@ -1,0 +1,18 @@
+[package]
+name = "repolyze-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "repolyze"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
