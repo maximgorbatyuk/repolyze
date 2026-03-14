@@ -765,6 +765,7 @@ dependencies = [
  "repolyze-core",
  "repolyze-git",
  "repolyze-metrics",
+ "tempfile",
 ]
 
 [[package]]

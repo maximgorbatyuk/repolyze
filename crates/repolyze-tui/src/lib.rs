@@ -9,11 +9,11 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use ratatui::{Terminal, backend::CrosstermBackend};
 use repolyze_core::input::resolve_inputs_with_failures;
 use repolyze_core::service::analyze_targets;
 use repolyze_git::backend::GitCliBackend;
 use repolyze_metrics::FilesystemMetricsBackend;
-use ratatui::{Terminal, backend::CrosstermBackend};
 
 use app::{AppAction, AppState, Screen};
 
@@ -66,7 +66,8 @@ pub fn execute_pending_action(app: &mut AppState) -> anyhow::Result<()> {
 
             app.set_result(report);
             if current_failure_count > 0 {
-                app.status_message = format!("Analysis complete with {current_failure_count} error(s)");
+                app.status_message =
+                    format!("Analysis complete with {current_failure_count} error(s)");
             }
         }
         AppAction::ShowErrors => {
