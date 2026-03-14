@@ -710,7 +710,13 @@ dependencies = [
  "assert_cmd",
  "clap",
  "predicates",
+ "repolyze-core",
+ "repolyze-git",
+ "repolyze-metrics",
+ "repolyze-report",
  "repolyze-tui",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
