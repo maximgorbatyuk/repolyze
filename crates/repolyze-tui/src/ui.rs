@@ -1,9 +1,9 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 
 use crate::app::{AppState, Screen};
@@ -19,18 +19,11 @@ const LOGO: &str = r#"
 
 const GITHUB_URL: &str = "https://github.com/maximgorbatyuk/repolyze";
 const SLOGAN: &str = "Know your code better.";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+const AUTHOR: &str = "maximgorbatyuk";
 
 pub fn draw(frame: &mut Frame, app: &AppState) {
-    let outer = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
-        .split(frame.area());
-
-    draw_content(frame, app, outer[0]);
-    draw_status_bar(frame, app, outer[1]);
-}
-
-fn draw_content(frame: &mut Frame, app: &AppState, area: Rect) {
+    let area = frame.area();
     match app.active_screen {
         Screen::Home => draw_home(frame, app, area),
         Screen::Help => draw_help(frame, area),
@@ -38,6 +31,26 @@ fn draw_content(frame: &mut Frame, app: &AppState, area: Rect) {
         Screen::Compare => draw_compare(frame, app, area),
         Screen::Errors => draw_errors(frame, app, area),
     }
+}
+
+fn key_hint<'a>(key: &'a str, label: &'a str) -> Vec<Span<'a>> {
+    vec![
+        Span::styled(key, Style::default().fg(Color::Yellow)),
+        Span::styled(format!(" {label}"), Style::default().fg(Color::DarkGray)),
+    ]
+}
+
+fn hints_line<'a>(hints: &'a [(&'a str, &'a str)]) -> Line<'a> {
+    let dim = Style::default().fg(Color::DarkGray);
+    let mut spans: Vec<Span> = Vec::new();
+    spans.push(Span::raw(" "));
+    for (i, (key, label)) in hints.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled("  \u{2502}  ", dim)); // │
+        }
+        spans.extend(key_hint(key, label));
+    }
+    Line::from(spans)
 }
 
 fn draw_home(frame: &mut Frame, app: &AppState, area: Rect) {
@@ -51,7 +64,7 @@ fn draw_home(frame: &mut Frame, app: &AppState, area: Rect) {
         )));
     }
 
-    // Slogan and GitHub link
+    // Slogan
     lines.push(Line::from(vec![Span::styled(
         format!("  {SLOGAN}"),
         Style::default()
@@ -59,8 +72,16 @@ fn draw_home(frame: &mut Frame, app: &AppState, area: Rect) {
             .add_modifier(Modifier::ITALIC),
     )]));
     lines.push(Line::from(""));
+
+    // GitHub link
     lines.push(Line::from(Span::styled(
         format!("  {GITHUB_URL}"),
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    // Version and author
+    lines.push(Line::from(Span::styled(
+        format!("  v{VERSION}  \u{00a9} {AUTHOR}"),
         Style::default().fg(Color::DarkGray),
     )));
     lines.push(Line::from(""));
@@ -94,34 +115,50 @@ fn draw_home(frame: &mut Frame, app: &AppState, area: Rect) {
         ]));
     }
 
+    // Key hints
+    lines.push(Line::from(""));
+    lines.push(hints_line(&[
+        ("\u{2191}\u{2193}", "Navigate"),
+        ("Enter", "Select"),
+        ("?", "Help"),
+        ("Q", "Quit"),
+    ]));
+
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
 }
 
 fn draw_help(frame: &mut Frame, area: Rect) {
-    let text = "\
- Help
+    let mut lines = vec![
+        Line::from(Span::styled(
+            " Help",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(" Navigation:"),
+        Line::from("   j/\u{2193}       Move down in menu"),
+        Line::from("   k/\u{2191}       Move up in menu"),
+        Line::from("   Enter     Activate selected item"),
+        Line::from("   ?         Return to Help"),
+        Line::from("   Esc       Return to Home"),
+        Line::from("   q         Quit"),
+        Line::from(""),
+        Line::from(" Screens:"),
+        Line::from("   Analyze   Analyze one or more repositories"),
+        Line::from("   Compare   Compare multiple repositories"),
+        Line::from("   Help      This screen"),
+        Line::from("   Errors    View analysis errors"),
+        Line::from(""),
+        Line::from(" In Analyze/Compare screens:"),
+        Line::from("   Type a path and press Enter to add it"),
+        Line::from("   Press Enter with empty input to run analysis"),
+        Line::from("   Esc       Return to Home"),
+    ];
 
- Navigation:
-   j/\u{2193}       Move down in menu
-   k/\u{2191}       Move up in menu
-   Enter     Activate selected item
-   ?         Return to Help
-   Esc       Return to Home
-   q         Quit
+    lines.push(Line::from(""));
+    lines.push(hints_line(&[("Esc", "Home"), ("Q", "Quit")]));
 
- Screens:
-   Analyze   Analyze one or more repositories
-   Compare   Compare multiple repositories
-   Help      This screen
-   Errors    View analysis errors
-
- In Analyze/Compare screens:
-   Type a path and press Enter to add it
-   Press Enter with empty input to run analysis
-   Esc       Return to Home";
-
-    let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
 }
 
@@ -168,6 +205,13 @@ fn draw_analyze(frame: &mut Frame, app: &AppState, area: Rect) {
             )));
         }
     }
+
+    lines.push(Line::from(""));
+    lines.push(hints_line(&[
+        ("Enter", "Add path / Run"),
+        ("Esc", "Home"),
+        ("Q", "Quit"),
+    ]));
 
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
@@ -225,6 +269,13 @@ fn draw_compare(frame: &mut Frame, app: &AppState, area: Rect) {
         }
     }
 
+    lines.push(Line::from(""));
+    lines.push(hints_line(&[
+        ("Enter", "Add path / Run"),
+        ("Esc", "Home"),
+        ("Q", "Quit"),
+    ]));
+
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
 }
@@ -251,32 +302,9 @@ fn draw_errors(frame: &mut Frame, app: &AppState, area: Rect) {
         }
     }
 
+    lines.push(Line::from(""));
+    lines.push(hints_line(&[("Esc", "Home"), ("Q", "Quit")]));
+
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
-}
-
-fn draw_status_bar(frame: &mut Frame, app: &AppState, area: Rect) {
-    let error_count = if app.errors.is_empty() {
-        String::new()
-    } else {
-        format!("  |  {} error(s)", app.errors.len())
-    };
-
-    let status = match app.active_screen {
-        Screen::Home => format!(" \u{2191}\u{2193}  |  Enter  |  Q Quit{}", error_count),
-        _ => {
-            let screen_name = format!("{:?}", app.active_screen);
-            format!(
-                " [{screen_name}] {}  |  Esc Home  |  Q Quit{}",
-                app.status_message, error_count
-            )
-        }
-    };
-
-    let bar = Paragraph::new(status).block(
-        Block::default()
-            .borders(Borders::TOP)
-            .style(Style::default().fg(Color::DarkGray)),
-    );
-    frame.render_widget(bar, area);
 }
