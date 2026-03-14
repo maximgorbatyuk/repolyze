@@ -1,4 +1,4 @@
-# repolyze
+# Repolyze
 
 `repolyze` is a Rust-based repository analysis tool for one or more already-cloned local Git repositories.
 It is designed as a TUI-first application with optional CLI commands for users who want scriptable analysis without the interactive interface.
@@ -9,6 +9,16 @@ The initial product scope focuses on:
 - most active hours and days based on commit activity
 - language-agnostic repository size comparison
 - JSON and Markdown report output
+
+## Installation
+
+```bash
+brew tap maximgorbatyuk/tap
+brew install repolyze
+
+# Check installation
+repolyze -V
+```
 
 ## Project Docs
 
