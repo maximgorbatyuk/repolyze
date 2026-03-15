@@ -92,6 +92,31 @@ Release artifacts are built by GitHub Actions on version tags via `cargo-dist`. 
 - CI runs on push to `main`/`dev` and PRs to `main`: fmt check, clippy, build, test
 - Release via `cargo-dist` with GitHub Actions; macOS + Linux only (no Windows in v1)
 
+## Table Output Format
+
+All plain-text tables (CLI and TUI) must follow this format. Renderer: `crates/repolyze-report/src/table.rs`.
+
+```
+Period:    2024-03-01 .. 2025-03-15
+Projects:  2 repositories
+Elapsed:   1.234s
+
+Column A           Column B  Column C
+-----------------  --------  --------
+left-aligned text        42     12.50
+another row               7      3.00
+-----------------  --------  --------
+Total                    49     15.50
+```
+
+Rules:
+- No `|` borders — columns separated by two spaces
+- Header row is always left-aligned
+- Numeric columns are right-aligned
+- Dash separator after header and before totals row
+- Totals row only on RF-8 (Users contribution) table
+- Summary header (period, project count, elapsed) precedes every table output
+
 ## Rust 2024 Edition Gotchas
 
 - Pattern `|(_, &c)| c` is rejected — use `|(_, c)| *c` instead
