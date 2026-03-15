@@ -1,15 +1,21 @@
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::app::{AppState, Screen};
 
 /// Handle a key press event, updating app state accordingly.
-pub fn handle_key(app: &mut AppState, code: KeyCode) {
+pub fn handle_key(app: &mut AppState, key: KeyEvent) {
+    // Ctrl+C quits from any screen
+    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+        app.quit();
+        return;
+    }
+
     match app.active_screen {
-        Screen::Home => handle_home(app, code),
-        Screen::Help | Screen::Errors => handle_global(app, code),
-        Screen::AnalyzeMenu => handle_analyze_menu(app, code),
-        Screen::Analyze => handle_results_screen(app, code),
-        Screen::Compare => handle_input_screen(app, code),
+        Screen::Home => handle_home(app, key.code),
+        Screen::Help | Screen::Errors => handle_global(app, key.code),
+        Screen::AnalyzeMenu => handle_analyze_menu(app, key.code),
+        Screen::Analyze => handle_results_screen(app, key.code),
+        Screen::Compare => handle_input_screen(app, key.code),
     }
 }
 

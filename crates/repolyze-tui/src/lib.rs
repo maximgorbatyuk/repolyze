@@ -32,7 +32,7 @@ pub fn run() -> anyhow::Result<()> {
         terminal.draw(|frame| ui::draw(frame, &app))?;
 
         if let Event::Key(key) = read_event()? {
-            event::handle_key(&mut app, key.code);
+            event::handle_key(&mut app, key);
         }
 
         execute_pending_action(&mut app)?;
