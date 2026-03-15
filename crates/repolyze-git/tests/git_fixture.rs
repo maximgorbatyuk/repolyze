@@ -48,3 +48,20 @@ fn git_fixture_creates_deterministic_history() {
 
     assert_eq!(count, 3, "expected 3 commits in fixture repo");
 }
+
+#[test]
+fn current_head_metadata_returns_head_hash_and_branch_name() {
+    let repo = create_fixture_repo(&[CommitSpec {
+        author_name: "Alice",
+        author_email: "alice@example.com",
+        authored_at: "2025-01-15T10:00:00+00:00",
+        message: "initial",
+        rel_path: "README.md",
+        contents: "# Test\n",
+    }]);
+
+    let metadata = repolyze_git::repository::current_head_metadata(repo.path()).unwrap();
+
+    assert!(!metadata.head_commit_hash.is_empty());
+    assert!(!metadata.branch_name.is_empty());
+}
