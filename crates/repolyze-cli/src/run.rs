@@ -1,16 +1,22 @@
 use std::path::PathBuf;
 
+use repolyze_core::analytics::{build_user_activity_rows, build_users_contribution_rows};
 use repolyze_core::input::resolve_inputs_with_failures;
 use repolyze_core::service::analyze_targets_with_store;
 use repolyze_git::backend::GitCliBackend;
 use repolyze_metrics::FilesystemMetricsBackend;
 use repolyze_report::json::render_json;
 use repolyze_report::markdown::render_markdown;
+use repolyze_report::table::{render_user_activity_table, render_users_contribution_table};
 
-use crate::args::OutputFormat;
+use crate::args::{AnalyzeView, OutputFormat};
 
 /// Run analysis on one or more repositories and return formatted output.
-pub fn run_analyze(repos: &[PathBuf], format: &OutputFormat) -> anyhow::Result<String> {
+pub fn run_analyze(
+    repos: &[PathBuf],
+    view: &AnalyzeView,
+    format: &OutputFormat,
+) -> anyhow::Result<String> {
     let (targets, input_failures) = resolve_inputs_with_failures(repos);
     let git = GitCliBackend;
     let metrics = FilesystemMetricsBackend;
@@ -23,9 +29,26 @@ pub fn run_analyze(repos: &[PathBuf], format: &OutputFormat) -> anyhow::Result<S
         report.failures = failures;
     }
 
-    match format {
-        OutputFormat::Json => render_json(&report),
-        OutputFormat::Md => Ok(render_markdown(&report)),
+    match (view, format) {
+        (AnalyzeView::All, OutputFormat::Json) => render_json(&report),
+        (AnalyzeView::All, OutputFormat::Md) => Ok(render_markdown(&report)),
+        (AnalyzeView::All, OutputFormat::Table) => Err(anyhow::anyhow!(
+            "'all' view does not support table format; use json or md"
+        )),
+        (AnalyzeView::UsersContribution, OutputFormat::Table) => {
+            let rows = build_users_contribution_rows(&report.repositories);
+            Ok(render_users_contribution_table(&rows))
+        }
+        (AnalyzeView::Activity, OutputFormat::Table) => {
+            let rows = build_user_activity_rows(&report.repositories);
+            Ok(render_user_activity_table(&rows))
+        }
+        (
+            AnalyzeView::UsersContribution | AnalyzeView::Activity,
+            OutputFormat::Json | OutputFormat::Md,
+        ) => Err(anyhow::anyhow!(
+            "analytics views only support table format; use --format table"
+        )),
     }
 }
 

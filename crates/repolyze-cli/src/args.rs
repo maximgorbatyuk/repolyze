@@ -29,6 +29,10 @@ pub enum Commands {
 
 #[derive(clap::Args)]
 pub struct AnalyzeArgs {
+    /// Analysis view
+    #[arg(value_enum, default_value = "all")]
+    pub view: AnalyzeView,
+
     /// Repository path(s) to analyze (defaults to current directory)
     #[arg(long = "repo")]
     pub repos: Vec<PathBuf>,
@@ -58,7 +62,18 @@ pub struct CompareArgs {
 }
 
 #[derive(Clone, ValueEnum)]
+pub enum AnalyzeView {
+    /// Full analysis (JSON or Markdown)
+    All,
+    /// Per-contributor commit and line statistics (RF-8)
+    UsersContribution,
+    /// Most active days and hours per contributor (RF-9)
+    Activity,
+}
+
+#[derive(Clone, ValueEnum)]
 pub enum OutputFormat {
     Json,
     Md,
+    Table,
 }
