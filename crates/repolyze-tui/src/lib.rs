@@ -101,8 +101,12 @@ where
                     render_user_activity_table(&rows)
                 }
                 AnalyzeView::All => {
-                    let rows = build_users_contribution_rows(&report.repositories);
-                    render_users_contribution_table(&rows)
+                    let contrib_rows = build_users_contribution_rows(&report.repositories);
+                    let activity_rows = build_user_activity_rows(&report.repositories);
+                    let mut combined = render_users_contribution_table(&contrib_rows);
+                    combined.push_str("\n\n");
+                    combined.push_str(&render_user_activity_table(&activity_rows));
+                    combined
                 }
             };
             app.analysis_table = Some(format!("{header}{table_body}"));
@@ -127,7 +131,9 @@ where
                     return Ok(());
                 }
             };
+            let start = std::time::Instant::now();
             let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store, "tui");
+            let elapsed = start.elapsed();
             let current_failure_count = input_failures.len() + report.failures.len();
 
             if !input_failures.is_empty() {
@@ -135,6 +141,13 @@ where
                 failures.extend(report.failures);
                 report.failures = failures;
             }
+
+            let header = render_analysis_header(&report.repositories, elapsed);
+            let contrib_rows = build_users_contribution_rows(&report.repositories);
+            app.analysis_table = Some(format!(
+                "{header}{}",
+                render_users_contribution_table(&contrib_rows)
+            ));
 
             app.set_result(report);
             if current_failure_count > 0 {
@@ -287,13 +300,8 @@ fn format_file_size(bytes: u64) -> String {
 }
 
 fn open_store() -> anyhow::Result<repolyze_store::sqlite::SqliteStore> {
-    let db_path = repolyze_store::path::resolve_database_path()?;
-    if let Some(parent) = db_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let store = repolyze_store::sqlite::SqliteStore::open(&db_path)
-        .map_err(|e| anyhow::anyhow!("failed to open database: {e}"))?;
-    Ok(store)
+    repolyze_store::sqlite::SqliteStore::open_default()
+        .map_err(|e| anyhow::anyhow!("failed to open database: {e}"))
 }
 
 #[cfg(test)]

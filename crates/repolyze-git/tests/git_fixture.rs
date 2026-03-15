@@ -63,5 +63,5 @@ fn current_head_metadata_returns_head_hash_and_branch_name() {
     let metadata = repolyze_git::repository::current_head_metadata(repo.path()).unwrap();
 
     assert!(!metadata.head_commit_hash.is_empty());
-    assert!(!metadata.branch_name.is_empty());
+    assert!(metadata.branch_name.is_some());
 }

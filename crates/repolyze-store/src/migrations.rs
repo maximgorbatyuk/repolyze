@@ -1,6 +1,8 @@
+pub const MIGRATIONS: &[(i32, &str)] = &[(1, MIGRATION_V1)];
+
 pub const SCHEMA_VERSION: i32 = 1;
 
-pub const MIGRATION_V1: &str = r#"
+const MIGRATION_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
@@ -18,7 +20,7 @@ CREATE TABLE IF NOT EXISTS repositories (
 
 CREATE TABLE IF NOT EXISTS analysis_snapshots (
   id INTEGER PRIMARY KEY,
-  repository_id INTEGER NOT NULL REFERENCES repositories(id),
+  repository_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
   history_scope TEXT NOT NULL,
   head_commit_hash TEXT NOT NULL,
   branch_name TEXT,
@@ -36,8 +38,8 @@ CREATE TABLE IF NOT EXISTS analysis_snapshots (
 
 CREATE TABLE IF NOT EXISTS scan_runs (
   id INTEGER PRIMARY KEY,
-  repository_id INTEGER NOT NULL REFERENCES repositories(id),
-  snapshot_id INTEGER REFERENCES analysis_snapshots(id),
+  repository_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  snapshot_id INTEGER REFERENCES analysis_snapshots(id) ON DELETE CASCADE,
   trigger_source TEXT NOT NULL,
   cache_status TEXT NOT NULL,
   started_at TEXT NOT NULL,
@@ -62,8 +64,8 @@ CREATE TABLE IF NOT EXISTS contributors (
 
 CREATE TABLE IF NOT EXISTS repository_commits (
   id INTEGER PRIMARY KEY,
-  repository_id INTEGER NOT NULL REFERENCES repositories(id),
-  contributor_id INTEGER NOT NULL REFERENCES contributors(id),
+  repository_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  contributor_id INTEGER NOT NULL REFERENCES contributors(id) ON DELETE CASCADE,
   commit_hash TEXT NOT NULL,
   author_name TEXT NOT NULL,
   author_email TEXT NOT NULL,
@@ -80,7 +82,7 @@ CREATE TABLE IF NOT EXISTS repository_commits (
 
 CREATE TABLE IF NOT EXISTS commit_file_changes (
   id INTEGER PRIMARY KEY,
-  commit_id INTEGER NOT NULL REFERENCES repository_commits(id),
+  commit_id INTEGER NOT NULL REFERENCES repository_commits(id) ON DELETE CASCADE,
   file_path TEXT NOT NULL,
   additions INTEGER NOT NULL,
   deletions INTEGER NOT NULL,
@@ -97,14 +99,14 @@ CREATE INDEX IF NOT EXISTS idx_commit_file_changes_commit
   ON commit_file_changes (commit_id);
 
 CREATE TABLE IF NOT EXISTS snapshot_commits (
-  snapshot_id INTEGER NOT NULL REFERENCES analysis_snapshots(id),
-  commit_id INTEGER NOT NULL REFERENCES repository_commits(id),
+  snapshot_id INTEGER NOT NULL REFERENCES analysis_snapshots(id) ON DELETE CASCADE,
+  commit_id INTEGER NOT NULL REFERENCES repository_commits(id) ON DELETE CASCADE,
   PRIMARY KEY (snapshot_id, commit_id)
 );
 
 CREATE TABLE IF NOT EXISTS snapshot_contributor_summaries (
-  snapshot_id INTEGER NOT NULL REFERENCES analysis_snapshots(id),
-  contributor_id INTEGER NOT NULL REFERENCES contributors(id),
+  snapshot_id INTEGER NOT NULL REFERENCES analysis_snapshots(id) ON DELETE CASCADE,
+  contributor_id INTEGER NOT NULL REFERENCES contributors(id) ON DELETE CASCADE,
   commits_count INTEGER NOT NULL,
   lines_added INTEGER NOT NULL,
   lines_deleted INTEGER NOT NULL,
@@ -119,8 +121,8 @@ CREATE TABLE IF NOT EXISTS snapshot_contributor_summaries (
 );
 
 CREATE TABLE IF NOT EXISTS snapshot_contributor_weekday_stats (
-  snapshot_id INTEGER NOT NULL REFERENCES analysis_snapshots(id),
-  contributor_id INTEGER NOT NULL REFERENCES contributors(id),
+  snapshot_id INTEGER NOT NULL REFERENCES analysis_snapshots(id) ON DELETE CASCADE,
+  contributor_id INTEGER NOT NULL REFERENCES contributors(id) ON DELETE CASCADE,
   weekday INTEGER NOT NULL,
   commits_count INTEGER NOT NULL,
   active_dates_count INTEGER NOT NULL,
@@ -128,8 +130,8 @@ CREATE TABLE IF NOT EXISTS snapshot_contributor_weekday_stats (
 );
 
 CREATE TABLE IF NOT EXISTS snapshot_contributor_hour_stats (
-  snapshot_id INTEGER NOT NULL REFERENCES analysis_snapshots(id),
-  contributor_id INTEGER NOT NULL REFERENCES contributors(id),
+  snapshot_id INTEGER NOT NULL REFERENCES analysis_snapshots(id) ON DELETE CASCADE,
+  contributor_id INTEGER NOT NULL REFERENCES contributors(id) ON DELETE CASCADE,
   hour_of_day INTEGER NOT NULL,
   commits_count INTEGER NOT NULL,
   active_hour_buckets_count INTEGER NOT NULL,

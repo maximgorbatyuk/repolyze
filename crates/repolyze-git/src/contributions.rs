@@ -90,7 +90,7 @@ fn aggregate_contributions(commits: &[ParsedCommit]) -> ContributionSummary {
             commits: acc.commits,
             lines_added: acc.lines_added,
             lines_deleted: acc.lines_deleted,
-            net_lines: acc.lines_added as i64 - acc.lines_deleted as i64,
+            net_lines: (acc.lines_added as i64).saturating_sub(acc.lines_deleted as i64),
             files_touched: acc.files.len() as u64,
             active_days: acc.dates.len() as u64,
             first_commit,

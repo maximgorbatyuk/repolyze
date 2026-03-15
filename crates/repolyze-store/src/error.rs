@@ -5,4 +5,7 @@ pub enum StoreError {
 
     #[error("serialization error: {0}")]
     Serialization(String),
+
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
 }

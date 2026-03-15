@@ -10,7 +10,7 @@ pub fn handle_key(app: &mut AppState, key: KeyEvent) {
 
     match app.active_screen {
         Screen::Home => handle_home(app, key.code),
-        Screen::Help | Screen::Metadata => handle_global(app, key.code),
+        Screen::Help | Screen::Metadata => handle_static_screen(app, key.code),
         Screen::AnalyzeMenu => handle_analyze_menu(app, key.code),
         Screen::Analyze => handle_results_screen(app, key.code),
         Screen::Compare => handle_input_screen(app, key.code),
@@ -30,12 +30,9 @@ fn handle_home(app: &mut AppState, code: KeyCode) {
     }
 }
 
-fn handle_global(app: &mut AppState, code: KeyCode) {
+fn handle_static_screen(app: &mut AppState, code: KeyCode) {
     match code {
         KeyCode::Char('q') => app.quit(),
-        KeyCode::Up | KeyCode::Char('k') => app.move_up(),
-        KeyCode::Down | KeyCode::Char('j') => app.move_down(),
-        KeyCode::Enter => app.activate_selected(),
         KeyCode::Esc => app.go_home(),
         KeyCode::Char('?') => {
             app.active_screen = Screen::Help;

@@ -87,14 +87,16 @@ pub fn analyze_targets_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: Analysi
         let cache_key = match git.cache_metadata(target) {
             Ok(metadata) => metadata,
             Err(error) => {
-                let _ = store.record_scan_result(
+                if let Err(e) = store.record_scan_result(
                     None,
                     &target.root,
                     trigger_source,
                     "miss",
                     "failed",
                     Some(&error.to_string()),
-                );
+                ) {
+                    eprintln!("warning: failed to record scan result: {e}");
+                }
                 failures.push(PartialFailure {
                     path: target.root.clone(),
                     reason: error.to_string(),
@@ -111,14 +113,16 @@ pub fn analyze_targets_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: Analysi
                 } else {
                     "bypass"
                 };
-                let _ = store.record_scan_result(
+                if let Err(e) = store.record_scan_result(
                     Some(&cache_key),
                     &target.root,
                     trigger_source,
                     cache_status,
                     "failed",
                     Some(&error.to_string()),
-                );
+                ) {
+                    eprintln!("warning: failed to record scan result: {e}");
+                }
                 failures.push(PartialFailure {
                     path: target.root.clone(),
                     reason: error.to_string(),
@@ -141,38 +145,46 @@ fn analyze_target_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: AnalysisStor
     if cache_key.cacheable
         && let Some(cached) = store.load_snapshot(cache_key)?
     {
-        let _ = store.record_scan_result(
+        if let Err(e) = store.record_scan_result(
             Some(cache_key),
             &target.root,
             trigger_source,
             "hit",
             "success",
             None,
-        );
+        ) {
+            eprintln!("warning: failed to record scan result: {e}");
+        }
         return Ok(cached);
     }
 
     let analysis = analyze_target(target, git, metrics)?;
 
     if cache_key.cacheable {
-        let _ = store.save_snapshot(cache_key, &analysis);
-        let _ = store.record_scan_result(
+        if let Err(e) = store.save_snapshot(cache_key, &analysis) {
+            eprintln!("warning: failed to record scan result: {e}");
+        }
+        if let Err(e) = store.record_scan_result(
             Some(cache_key),
             &target.root,
             trigger_source,
             "miss",
             "success",
             None,
-        );
+        ) {
+            eprintln!("warning: failed to record scan result: {e}");
+        }
     } else {
-        let _ = store.record_scan_result(
+        if let Err(e) = store.record_scan_result(
             Some(cache_key),
             &target.root,
             trigger_source,
             "bypass",
             "success",
             None,
-        );
+        ) {
+            eprintln!("warning: failed to record scan result: {e}");
+        }
     }
 
     Ok(analysis)

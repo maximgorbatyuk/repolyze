@@ -1,10 +1,10 @@
 use std::path::Path;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, Error as SqliteError, params};
 use serde_json::from_str;
 
 use crate::error::StoreError;
-use crate::migrations::{MIGRATION_V1, SCHEMA_VERSION};
+use crate::migrations::SCHEMA_VERSION;
 use crate::models::{
     CommitFileChangeRecord, CommitRecord, ContributorRecord, UserActivityRowRecord,
     UsersContributionRowRecord,
@@ -20,16 +20,31 @@ impl SqliteStore {
 
         // FK enforcement is per-connection, set unconditionally before migrations
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        conn.execute_batch("PRAGMA journal_mode = WAL;")?;
 
-        // Version-aware migration: only apply if DB is older than current schema
+        // Version-aware migration: apply each migration newer than the current version
         let current_version: i32 =
             conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if current_version < SCHEMA_VERSION {
-            conn.execute_batch(MIGRATION_V1)?;
-            conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        for &(version, sql) in crate::migrations::MIGRATIONS {
+            if current_version < version {
+                conn.execute_batch(sql)?;
+            }
         }
+        let target = crate::migrations::MIGRATIONS
+            .last()
+            .map(|(v, _)| *v)
+            .unwrap_or(0);
+        conn.pragma_update(None, "user_version", target)?;
 
         Ok(Self { conn })
+    }
+
+    pub fn open_default() -> Result<Self, StoreError> {
+        let db_path = crate::path::resolve_database_path()?;
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        Self::open(&db_path)
     }
 
     pub fn table_names(&self) -> Result<Vec<String>, StoreError> {
@@ -132,14 +147,15 @@ impl SqliteStore {
         file_changes: &[CommitFileChangeRecord],
     ) -> Result<i64, StoreError> {
         // Check if commit already exists
-        let existing: Option<i64> = self
-            .conn
-            .query_row(
-                "SELECT id FROM repository_commits WHERE repository_id = ?1 AND commit_hash = ?2",
-                params![commit.repository_id, commit.commit_hash],
-                |row| row.get(0),
-            )
-            .ok();
+        let existing: Option<i64> = match self.conn.query_row(
+            "SELECT id FROM repository_commits WHERE repository_id = ?1 AND commit_hash = ?2",
+            params![commit.repository_id, commit.commit_hash],
+            |row| row.get(0),
+        ) {
+            Ok(val) => Some(val),
+            Err(SqliteError::QueryReturnedNoRows) => None,
+            Err(e) => return Err(e.into()),
+        };
 
         if let Some(id) = existing {
             return Ok(id);
@@ -182,7 +198,12 @@ impl SqliteStore {
         })();
 
         match &result {
-            Ok(_) => self.conn.execute_batch("COMMIT")?,
+            Ok(_) => {
+                if let Err(e) = self.conn.execute_batch("COMMIT") {
+                    let _ = self.conn.execute_batch("ROLLBACK");
+                    return Err(e.into());
+                }
+            }
             Err(_) => {
                 let _ = self.conn.execute_batch("ROLLBACK");
             }
@@ -423,37 +444,39 @@ impl repolyze_core::service::AnalysisStore for SqliteStore {
     ) -> Result<Option<repolyze_core::model::RepositoryAnalysis>, repolyze_core::error::RepolyzeError>
     {
         let canonical_path = key.repository_root.to_string_lossy();
-        let repo_id: Option<i64> = self
-            .conn
-            .query_row(
-                "SELECT id FROM repositories WHERE canonical_path = ?1",
-                params![canonical_path.as_ref()],
-                |row| row.get(0),
-            )
-            .ok();
+        let repo_id: Option<i64> = match self.conn.query_row(
+            "SELECT id FROM repositories WHERE canonical_path = ?1",
+            params![canonical_path.as_ref()],
+            |row| row.get(0),
+        ) {
+            Ok(val) => Some(val),
+            Err(SqliteError::QueryReturnedNoRows) => None,
+            Err(e) => return Err(repolyze_core::error::RepolyzeError::Store(e.to_string())),
+        };
 
         let Some(repo_id) = repo_id else {
             return Ok(None);
         };
 
-        let result: Option<String> = self
-            .conn
-            .query_row(
-                "SELECT analysis_payload_json FROM analysis_snapshots
+        let result: Option<String> = match self.conn.query_row(
+            "SELECT analysis_payload_json FROM analysis_snapshots
                  WHERE repository_id = ?1 AND history_scope = ?2 AND head_commit_hash = ?3
                  AND repolyze_version = ?4 AND schema_version = ?5
                  AND is_complete = 1
                  ORDER BY snapshot_created_at DESC LIMIT 1",
-                params![
-                    repo_id,
-                    key.history_scope,
-                    key.head_commit_hash,
-                    env!("CARGO_PKG_VERSION"),
-                    SCHEMA_VERSION,
-                ],
-                |row| row.get(0),
-            )
-            .ok();
+            params![
+                repo_id,
+                key.history_scope,
+                key.head_commit_hash,
+                env!("CARGO_PKG_VERSION"),
+                SCHEMA_VERSION,
+            ],
+            |row| row.get(0),
+        ) {
+            Ok(val) => Some(val),
+            Err(SqliteError::QueryReturnedNoRows) => None,
+            Err(e) => return Err(repolyze_core::error::RepolyzeError::Store(e.to_string())),
+        };
 
         match result {
             Some(json) => {
@@ -620,10 +643,12 @@ impl repolyze_core::service::AnalysisStore for SqliteStore {
         })();
 
         match &result {
-            Ok(()) => self
-                .conn
-                .execute_batch("COMMIT")
-                .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?,
+            Ok(()) => {
+                if let Err(e) = self.conn.execute_batch("COMMIT") {
+                    let _ = self.conn.execute_batch("ROLLBACK");
+                    return Err(repolyze_core::error::RepolyzeError::Store(e.to_string()));
+                }
+            }
             Err(_) => {
                 let _ = self.conn.execute_batch("ROLLBACK");
             }
@@ -651,16 +676,18 @@ impl repolyze_core::service::AnalysisStore for SqliteStore {
             .upsert_repository(&canonical_path, &display_name)
             .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
 
-        let snapshot_id = key
-            .and_then(|metadata| {
-                self.conn
-                    .query_row(
-                        "SELECT id FROM analysis_snapshots WHERE repository_id = ?1 AND history_scope = ?2 AND head_commit_hash = ?3 ORDER BY snapshot_created_at DESC LIMIT 1",
-                        params![repo_id, metadata.history_scope, metadata.head_commit_hash],
-                        |row| row.get::<_, i64>(0),
-                    )
-                    .ok()
-            });
+        let snapshot_id = match key {
+            Some(metadata) => match self.conn.query_row(
+                "SELECT id FROM analysis_snapshots WHERE repository_id = ?1 AND history_scope = ?2 AND head_commit_hash = ?3 ORDER BY snapshot_created_at DESC LIMIT 1",
+                params![repo_id, metadata.history_scope, metadata.head_commit_hash],
+                |row| row.get::<_, i64>(0),
+            ) {
+                Ok(val) => Some(val),
+                Err(SqliteError::QueryReturnedNoRows) => None,
+                Err(e) => return Err(repolyze_core::error::RepolyzeError::Store(e.to_string())),
+            },
+            None => None,
+        };
 
         let now = now_unix_secs();
         self.conn
@@ -677,6 +704,7 @@ impl repolyze_core::service::AnalysisStore for SqliteStore {
 
 /// Generate parameterized placeholders for an IN clause: "?1,?2,?3"
 fn parameterized_in_clause(count: usize) -> String {
+    debug_assert!(count > 0, "parameterized_in_clause called with count=0");
     (1..=count)
         .map(|i| format!("?{i}"))
         .collect::<Vec<_>>()

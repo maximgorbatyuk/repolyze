@@ -12,12 +12,12 @@ const WEEKDAY_NAMES: [&str; 7] = [
     "Sunday",
 ];
 
-fn most_active_index(arr: &[u32]) -> usize {
+fn most_active_index(arr: &[u32]) -> Option<usize> {
     arr.iter()
         .enumerate()
         .max_by_key(|(_, c)| *c)
+        .filter(|(_, c)| **c > 0)
         .map(|(i, _)| i)
-        .unwrap_or(0)
 }
 
 pub fn build_users_contribution_rows(repos: &[RepositoryAnalysis]) -> Vec<UsersContributionRow> {
@@ -26,20 +26,22 @@ pub fn build_users_contribution_rows(repos: &[RepositoryAnalysis]) -> Vec<UsersC
         .into_iter()
         .map(|(email, m)| {
             let commits = m.commits;
-            let lines_modified = m.lines_added + m.lines_deleted;
+            let lines_modified = m.lines_added.saturating_add(m.lines_deleted);
             let lines_per_commit = if commits > 0 {
                 lines_modified as f64 / commits as f64
             } else {
                 0.0
             };
-            let most_active_weekday_idx = most_active_index(&m.weekday_commits);
+            let most_active_week_day = most_active_index(&m.weekday_commits)
+                .map(|i| WEEKDAY_NAMES[i].to_string())
+                .unwrap_or_else(|| "N/A".to_string());
             UsersContributionRow {
                 email,
                 commits,
                 lines_modified,
                 lines_per_commit,
                 files_touched: m.files_touched,
-                most_active_week_day: WEEKDAY_NAMES[most_active_weekday_idx].to_string(),
+                most_active_week_day,
             }
         })
         .collect();
@@ -67,11 +69,16 @@ pub fn build_user_activity_rows(repos: &[RepositoryAnalysis]) -> Vec<UserActivit
                 0.0
             };
 
-            let most_active_weekday_dates =
-                m.active_dates_by_weekday[most_active_weekday_idx].len() as f64;
-            let most_active_weekday_commits = m.weekday_commits[most_active_weekday_idx] as f64;
-            let average_commits_per_day_in_most_active_day = if most_active_weekday_dates > 0.0 {
-                most_active_weekday_commits / most_active_weekday_dates
+            let average_commits_per_day_in_most_active_day = if let Some(weekday_idx) =
+                most_active_weekday_idx
+            {
+                let most_active_weekday_dates = m.active_dates_by_weekday[weekday_idx].len() as f64;
+                let most_active_weekday_commits = m.weekday_commits[weekday_idx] as f64;
+                if most_active_weekday_dates > 0.0 {
+                    most_active_weekday_commits / most_active_weekday_dates
+                } else {
+                    0.0
+                }
             } else {
                 0.0
             };
@@ -83,18 +90,27 @@ pub fn build_user_activity_rows(repos: &[RepositoryAnalysis]) -> Vec<UserActivit
                 0.0
             };
 
-            let most_active_hour_buckets =
-                m.active_hour_buckets_by_hour[most_active_hour_idx].len() as f64;
-            let most_active_hour_commits = m.hour_commits[most_active_hour_idx] as f64;
-            let average_commits_per_hour_in_most_active_hour = if most_active_hour_buckets > 0.0 {
-                most_active_hour_commits / most_active_hour_buckets
+            let average_commits_per_hour_in_most_active_hour = if let Some(hour_idx) =
+                most_active_hour_idx
+            {
+                let most_active_hour_buckets = m.active_hour_buckets_by_hour[hour_idx].len() as f64;
+                let most_active_hour_commits = m.hour_commits[hour_idx] as f64;
+                if most_active_hour_buckets > 0.0 {
+                    most_active_hour_commits / most_active_hour_buckets
+                } else {
+                    0.0
+                }
             } else {
                 0.0
             };
 
+            let most_active_week_day = most_active_weekday_idx
+                .map(|i| WEEKDAY_NAMES[i].to_string())
+                .unwrap_or_else(|| "N/A".to_string());
+
             UserActivityRow {
                 email,
-                most_active_week_day: WEEKDAY_NAMES[most_active_weekday_idx].to_string(),
+                most_active_week_day,
                 average_commits_per_day_in_most_active_day,
                 average_commits_per_day,
                 average_commits_per_hour_in_most_active_hour,
@@ -151,12 +167,13 @@ fn merge_activity_by_email(repos: &[RepositoryAnalysis]) -> HashMap<String, Merg
             let email = act.email.to_lowercase();
             let entry = map.entry(email).or_default();
             for i in 0..7 {
-                entry.weekday_commits[i] += act.weekday_commits[i];
+                entry.weekday_commits[i] =
+                    entry.weekday_commits[i].saturating_add(act.weekday_commits[i]);
                 entry.active_dates_by_weekday[i]
                     .extend(act.active_dates_by_weekday[i].iter().cloned());
             }
             for i in 0..24 {
-                entry.hour_commits[i] += act.hour_commits[i];
+                entry.hour_commits[i] = entry.hour_commits[i].saturating_add(act.hour_commits[i]);
                 entry.active_hour_buckets_by_hour[i]
                     .extend(act.active_hour_buckets_by_hour[i].iter().cloned());
             }

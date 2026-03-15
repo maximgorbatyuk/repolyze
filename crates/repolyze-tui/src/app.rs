@@ -148,6 +148,10 @@ impl AppState {
 
     pub fn go_home(&mut self) {
         self.active_screen = Screen::Home;
+        self.input_buffer.clear();
+        self.input_paths.clear();
+        self.metadata_text = None;
+        self.status_message = "Ready".to_string();
     }
 
     pub fn quit(&mut self) {

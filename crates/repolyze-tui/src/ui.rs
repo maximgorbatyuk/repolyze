@@ -148,7 +148,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         Line::from("   Analyze   Analyze one or more repositories"),
         Line::from("   Compare   Compare multiple repositories"),
         Line::from("   Help      This screen"),
-        Line::from("   Errors    View analysis errors"),
+        Line::from("   Metadata  Database info and table row counts"),
         Line::from(""),
         Line::from(" In Compare screen:"),
         Line::from("   Type a path and press Enter to add it"),
@@ -320,7 +320,7 @@ fn draw_compare(frame: &mut Frame, app: &AppState, area: Rect) {
     lines.push(hints_line(&[
         ("Enter", "Add path / Run"),
         ("Esc", "Home"),
-        ("Q", "Quit"),
+        ("Ctrl+C", "Quit"),
     ]));
 
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });

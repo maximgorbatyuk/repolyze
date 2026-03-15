@@ -51,7 +51,11 @@ pub fn run_analyze(
             let rows = build_user_activity_rows(&report.repositories);
             Ok(format!("{header}{}", render_user_activity_table(&rows)))
         }
-        _ => unreachable!("validate_view_format should have caught this"),
+        (AnalyzeView::All, OutputFormat::Table)
+        | (
+            AnalyzeView::UsersContribution | AnalyzeView::Activity,
+            OutputFormat::Json | OutputFormat::Md,
+        ) => Err(anyhow::anyhow!("unsupported view/format combination")),
     }
 }
 
@@ -72,11 +76,6 @@ fn validate_view_format(view: &AnalyzeView, format: &OutputFormat) -> anyhow::Re
 }
 
 fn open_store() -> anyhow::Result<repolyze_store::sqlite::SqliteStore> {
-    let db_path = repolyze_store::path::resolve_database_path()?;
-    if let Some(parent) = db_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let store = repolyze_store::sqlite::SqliteStore::open(&db_path)
-        .map_err(|e| anyhow::anyhow!("failed to open database: {e}"))?;
-    Ok(store)
+    repolyze_store::sqlite::SqliteStore::open_default()
+        .map_err(|e| anyhow::anyhow!("failed to open database: {e}"))
 }

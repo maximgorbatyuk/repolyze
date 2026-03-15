@@ -18,11 +18,7 @@ impl GitAnalyzer for GitCliBackend {
             repository_root: target.root.clone(),
             history_scope: "head".to_string(),
             head_commit_hash: meta.head_commit_hash,
-            branch_name: if meta.branch_name.is_empty() {
-                None
-            } else {
-                Some(meta.branch_name)
-            },
+            branch_name: meta.branch_name,
             cacheable: worktree_is_clean,
         })
     }
