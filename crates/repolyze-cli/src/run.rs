@@ -30,8 +30,7 @@ pub fn run_analyze(repos: &[PathBuf], format: &OutputFormat) -> anyhow::Result<S
 }
 
 fn open_store() -> anyhow::Result<repolyze_store::sqlite::SqliteStore> {
-    let home = std::env::var("HOME").map_err(|_| anyhow::anyhow!("HOME must be set"))?;
-    let db_path = repolyze_store::path::database_path_from_home(&home);
+    let db_path = repolyze_store::path::resolve_database_path()?;
     if let Some(parent) = db_path.parent() {
         std::fs::create_dir_all(parent)?;
     }

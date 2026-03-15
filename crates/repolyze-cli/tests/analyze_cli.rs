@@ -161,11 +161,9 @@ fn directory_flag_with_invalid_path_fails() {
 #[test]
 fn analyze_reuses_existing_database_on_second_run() {
     let repo = create_fixture_repo();
-    let home = tempfile::tempdir().unwrap();
 
     let mut first = Command::cargo_bin("repolyze").unwrap();
     first
-        .env("HOME", home.path())
         .args([
             "analyze",
             "--repo",
@@ -176,12 +174,19 @@ fn analyze_reuses_existing_database_on_second_run() {
         .assert()
         .success();
 
-    let db_path = home.path().join(".repolyze/repolyze.db");
-    assert!(db_path.exists());
+    // In debug builds, the DB is next to the binary
+    let bin_path = Command::cargo_bin("repolyze")
+        .unwrap()
+        .get_program()
+        .to_owned();
+    let db_path = std::path::Path::new(&bin_path)
+        .parent()
+        .unwrap()
+        .join("repolyze-dev.db");
+    assert!(db_path.exists(), "dev database should exist at {db_path:?}");
 
     let mut second = Command::cargo_bin("repolyze").unwrap();
     second
-        .env("HOME", home.path())
         .args([
             "analyze",
             "--repo",
