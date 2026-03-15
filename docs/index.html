@@ -477,18 +477,18 @@
           </div>
           <div class="feature-card animate-on-scroll">
             <div class="feature-icon" aria-hidden="true">[##]</div>
-            <h3>Activity Heatmaps</h3>
-            <p>Commit activity by hour and weekday, rendered as a 7&times;24 heatmap matrix.</p>
+            <h3>Analytics Views</h3>
+            <p>Per-contributor tables: commits, lines modified, files touched, most active days and hours.</p>
           </div>
           <div class="feature-card animate-on-scroll">
-            <div class="feature-icon" aria-hidden="true">&lt;/&gt;</div>
-            <h3>File Metrics</h3>
-            <p>.gitignore-aware file counting: lines, bytes, extension breakdowns, largest files.</p>
+            <div class="feature-icon" aria-hidden="true">[db]</div>
+            <h3>Smart Caching</h3>
+            <p>SQLite-backed cache. Re-analyzing unchanged repos is instant. Dirty worktrees always get fresh data.</p>
           </div>
           <div class="feature-card animate-on-scroll">
-            <div class="feature-icon" aria-hidden="true">[=&gt;]</div>
-            <h3>JSON &amp; Markdown Export</h3>
-            <p>Structured reports for CI pipelines, dashboards, or documentation.</p>
+            <div class="feature-icon" aria-hidden="true">[~/]</div>
+            <h3>Folder Discovery</h3>
+            <p>Point at a parent directory and all nested Git repositories are discovered and analyzed automatically.</p>
           </div>
           <div class="feature-card animate-on-scroll">
             <div class="feature-icon" aria-hidden="true">[TUI]</div>
@@ -592,6 +592,32 @@ repolyze 0.1.1</pre>
           </div>
 
           <div>
+            <p class="usage-label">Contributor analytics table</p>
+            <div class="terminal-window animate-on-scroll">
+              <div class="terminal-header" aria-hidden="true">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="terminal-title">~/projects/my-app</span>
+              </div>
+              <div class="terminal-body">
+<pre><span class="prompt">$</span> repolyze analyze users-contribution
+Period:    2026-03-10 .. 2026-03-14
+Projects:  1 repository
+Elapsed:   0.030s
+
+Email                        Commits  Lines Modified  Lines per commit  Files Touched  Most active week day
+---------------------------  -------  --------------  ----------------  -------------  --------------------
+nikita@bayev.kz                   51           12877            252.49             32  Tuesday
+maxim.gorbatyuk@outlook.com        2            1724            862.00              9  Saturday
+keksonoid98@gmail.com              1            1427           1427.00             10  Friday
+---------------------------  -------  --------------  ----------------  -------------  --------------------
+Total                             54           16028            296.81             51</pre>
+              </div>
+            </div>
+          </div>
+
+          <div>
             <p class="usage-label">Compare repositories side by side</p>
             <div class="terminal-window animate-on-scroll">
               <div class="terminal-header" aria-hidden="true">
@@ -629,22 +655,35 @@ repolyze 0.1.1</pre>
       </div>
     </section>
 
-    <!-- Demo placeholder -->
+    <!-- Demo -->
     <section>
       <div class="container">
         <h2 class="section-title">See it in action</h2>
-        <p class="section-subtitle">A quick look at the terminal UI.</p>
-        <div class="demo-placeholder animate-on-scroll">
-<pre>
- &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;
- &#9474;                                     &#9474;
- &#9474;     Screenshots coming soon.        &#9474;
- &#9474;     Star the repo to stay updated.  &#9474;
- &#9474;                                     &#9474;
- &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;
-</pre>
-          <p><a href="https://github.com/maximgorbatyuk/repolyze" target="_blank" rel="noopener">Star on GitHub &rarr;</a></p>
+        <p class="section-subtitle">Real output from a single command.</p>
+        <div class="terminal-window animate-on-scroll">
+          <div class="terminal-header" aria-hidden="true">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+            <span class="terminal-title">~/projects/my-app</span>
+          </div>
+          <div class="terminal-body">
+<pre><span class="prompt">$</span> repolyze analyze users-contribution
+
+Period:    2026-03-10 .. 2026-03-14
+Projects:  1 repository
+Elapsed:   0.030s
+
+Email                        Commits  Lines Modified  Lines per commit  Files Touched  Most active week day
+---------------------------  -------  --------------  ----------------  -------------  --------------------
+nikita@bayev.kz                   51           12877            252.49             32  Tuesday
+maxim.gorbatyuk@outlook.com        2            1724            862.00              9  Saturday
+keksonoid98@gmail.com              1            1427           1427.00             10  Friday
+---------------------------  -------  --------------  ----------------  -------------  --------------------
+Total                             54           16028            296.81             51</pre>
+          </div>
         </div>
+        <p style="text-align:center;margin-top:16px;"><a href="https://github.com/maximgorbatyuk/repolyze" target="_blank" rel="noopener" style="color:var(--accent-blue);text-decoration:none;font-size:0.85rem;">Star on GitHub &rarr;</a></p>
       </div>
     </section>
 
