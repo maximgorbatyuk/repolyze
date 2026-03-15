@@ -14,10 +14,17 @@ pub fn database_path_for_dev() -> std::io::Result<PathBuf> {
     Ok(dir.join("repolyze-dev.db"))
 }
 
-/// Picks the right database path based on build profile.
-/// - Debug builds → next to the binary (`target/debug/repolyze-dev.db`)
-/// - Release builds → `~/.repolyze/repolyze.db`
+/// Picks the right database path.
+///
+/// Priority:
+/// 1. `REPOLYZE_DB_PATH` env var (if set) — used by tests for isolation
+/// 2. Debug builds → next to the binary (`target/debug/repolyze-dev.db`)
+/// 3. Release builds → `~/.repolyze/repolyze.db`
 pub fn resolve_database_path() -> std::io::Result<PathBuf> {
+    if let Ok(path) = std::env::var("REPOLYZE_DB_PATH") {
+        return Ok(PathBuf::from(path));
+    }
+
     if cfg!(debug_assertions) {
         database_path_for_dev()
     } else {

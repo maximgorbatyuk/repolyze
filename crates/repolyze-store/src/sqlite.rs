@@ -21,6 +21,7 @@ impl SqliteStore {
         // FK enforcement is per-connection, set unconditionally before migrations
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+        conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
 
         // Version-aware migration: apply each migration newer than the current version
         let current_version: i32 =

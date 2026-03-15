@@ -43,49 +43,62 @@ fn create_fixture_repo(name: &str) -> tempfile::TempDir {
     dir
 }
 
+fn isolated_db() -> tempfile::TempDir {
+    tempfile::tempdir().unwrap()
+}
+
+fn repolyze_cmd(db_dir: &tempfile::TempDir) -> Command {
+    let mut cmd = Command::cargo_bin("repolyze").unwrap();
+    cmd.env(
+        "REPOLYZE_DB_PATH",
+        db_dir.path().join("test.db").to_str().unwrap(),
+    );
+    cmd
+}
+
 #[test]
 fn compare_outputs_markdown() {
     let repo_a = create_fixture_repo("repo-a");
     let repo_b = create_fixture_repo("repo-b");
+    let db = isolated_db();
 
-    let mut cmd = Command::cargo_bin("repolyze").unwrap();
-    cmd.args([
-        "compare",
-        "--repo",
-        repo_a.path().to_str().unwrap(),
-        "--repo",
-        repo_b.path().to_str().unwrap(),
-        "--format",
-        "md",
-    ])
-    .assert()
-    .success()
-    .stdout(predicate::str::contains("# Repolyze Analysis Report"))
-    .stdout(predicate::str::contains("**2** repositories"));
+    repolyze_cmd(&db)
+        .args([
+            "compare",
+            "--repo",
+            repo_a.path().to_str().unwrap(),
+            "--repo",
+            repo_b.path().to_str().unwrap(),
+            "--format",
+            "md",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("# Repolyze Analysis Report"))
+        .stdout(predicate::str::contains("**2** repositories"));
 }
 
 #[test]
 fn compare_outputs_json_with_multiple_repos() {
     let repo_a = create_fixture_repo("repo-a");
     let repo_b = create_fixture_repo("repo-b");
+    let db = isolated_db();
 
-    let mut cmd = Command::cargo_bin("repolyze").unwrap();
-    cmd.args([
-        "compare",
-        "--repo",
-        repo_a.path().to_str().unwrap(),
-        "--repo",
-        repo_b.path().to_str().unwrap(),
-        "--format",
-        "json",
-    ])
-    .assert()
-    .success()
-    .stdout(predicate::str::contains("\"repositories\""));
+    repolyze_cmd(&db)
+        .args([
+            "compare",
+            "--repo",
+            repo_a.path().to_str().unwrap(),
+            "--repo",
+            repo_b.path().to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"repositories\""));
 
-    // Verify the JSON has 2 repositories
-    let output = Command::cargo_bin("repolyze")
-        .unwrap()
+    let output = repolyze_cmd(&db)
         .args([
             "compare",
             "--repo",
@@ -106,9 +119,9 @@ fn compare_outputs_json_with_multiple_repos() {
 #[test]
 fn compare_reports_invalid_repo_as_failure() {
     let repo = create_fixture_repo("repo-a");
+    let db = isolated_db();
 
-    let output = Command::cargo_bin("repolyze")
-        .unwrap()
+    let output = repolyze_cmd(&db)
         .args([
             "compare",
             "--repo",
