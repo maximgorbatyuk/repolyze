@@ -853,6 +853,7 @@ dependencies = [
  "repolyze-core",
  "repolyze-git",
  "repolyze-metrics",
+ "repolyze-report",
  "repolyze-store",
  "tempfile",
 ]

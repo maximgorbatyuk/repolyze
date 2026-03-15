@@ -16,6 +16,7 @@ Rust workspace with one binary crate and multiple library crates:
 - **repolyze-git** — Git subprocess backend, commit history parsing, contribution stats, activity summaries
 - **repolyze-metrics** — `.gitignore`-aware repo walking, file/line/byte counting, extension breakdowns
 - **repolyze-report** — JSON and Markdown report rendering (aggregates contributors/activity across repos)
+- **repolyze-store** — SQLite cache (`rusqlite`), database bootstrap, migrations, snapshot read/write queries
 - **xtask** — Developer automation (verification, release helpers)
 
 Domain logic lives in library crates so both TUI and CLI call the same services.
@@ -25,7 +26,7 @@ Domain logic lives in library crates so both TUI and CLI call the same services.
 ```bash
 cargo run                                # run repolyze (dev build, launches TUI)
 cargo run -- analyze --format json       # run a subcommand during development
-cargo xtask verify                       # fmt-check + clippy + test + check (primary workflow)
+cargo run --manifest-path xtask/Cargo.toml -- verify  # fmt-check + clippy + test + check (primary workflow)
 cargo build --workspace                  # build all crates
 cargo build --workspace --release        # release build
 cargo test --workspace                   # run all tests
@@ -35,7 +36,7 @@ cargo fmt --all --check                  # format check
 cargo clippy --workspace --all-targets --all-features -- -D warnings  # lint
 ```
 
-A `justfile` exists with the same targets (`just verify`, `just test`, etc.) but `just` may not be installed — use `cargo xtask verify` directly as the reliable alternative.
+A `justfile` exists with the same targets (`just verify`, `just test`, etc.) but `just` may not be installed. The `cargo xtask` alias is not configured — use `cargo run --manifest-path xtask/Cargo.toml -- verify` directly.
 
 ## CLI Usage
 
@@ -61,6 +62,13 @@ cargo dist plan                                # verify cargo-dist config
 
 Release artifacts are built by GitHub Actions on version tags via `cargo-dist`. Targets: macOS (aarch64, x86_64) and Linux (x86_64). Homebrew formula publishes to `maximgorbatyuk/homebrew-tap`.
 
+## Database
+
+- Dev builds (`cargo run`): `target/debug/repolyze-dev.db`
+- Release builds (installed binary): `~/.repolyze/repolyze.db`
+- Detection uses `cfg!(debug_assertions)` — no env var needed
+- Tests always use `tempfile::tempdir()`, never the real DB
+
 ## Design Constraints
 
 - No language-aware parsing (classes, functions) in v1
@@ -83,3 +91,11 @@ Release artifacts are built by GitHub Actions on version tags via `cargo-dist`. 
 - Commit after each task using conventional commits (`feat:`, `fix:`, `chore:`, `test:`, `docs:`)
 - CI runs on push to `main`/`dev` and PRs to `main`: fmt check, clippy, build, test
 - Release via `cargo-dist` with GitHub Actions; macOS + Linux only (no Windows in v1)
+
+## Rust 2024 Edition Gotchas
+
+- Pattern `|(_, &c)| c` is rejected — use `|(_, c)| *c` instead
+- Use `std::io::Error::other()` not `Error::new(ErrorKind::Other, ...)`
+- Use `std::slice::from_ref(&x)` not `&[x.clone()]`
+- Data record constructors with 8+ args need `#[allow(clippy::too_many_arguments)]`
+- `rusqlite::Connection` methods take `&self` — store wrapper methods should too
