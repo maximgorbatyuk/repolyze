@@ -3,11 +3,28 @@ use std::process::Command;
 
 use repolyze_core::error::RepolyzeError;
 use repolyze_core::model::{ActivitySummary, ContributionSummary, RepositoryTarget};
-use repolyze_core::service::GitAnalyzer;
+use repolyze_core::service::{GitAnalyzer, RepositoryCacheMetadata};
 
 pub struct GitCliBackend;
 
 impl GitAnalyzer for GitCliBackend {
+    fn cache_metadata(
+        &self,
+        target: &RepositoryTarget,
+    ) -> Result<RepositoryCacheMetadata, RepolyzeError> {
+        let meta = crate::repository::current_head_metadata(&target.root)?;
+        Ok(RepositoryCacheMetadata {
+            repository_root: target.root.clone(),
+            history_scope: "head".to_string(),
+            head_commit_hash: meta.head_commit_hash,
+            branch_name: if meta.branch_name.is_empty() {
+                None
+            } else {
+                Some(meta.branch_name)
+            },
+        })
+    }
+
     fn analyze_git(
         &self,
         target: &RepositoryTarget,
