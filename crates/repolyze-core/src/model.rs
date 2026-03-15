@@ -117,6 +117,26 @@ pub struct PartialFailure {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UsersContributionRow {
+    pub email: String,
+    pub commits: u64,
+    pub lines_modified: u64,
+    pub lines_per_commit: f64,
+    pub files_touched: u64,
+    pub most_active_week_day: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UserActivityRow {
+    pub email: String,
+    pub most_active_week_day: String,
+    pub average_commits_per_day_in_most_active_day: f64,
+    pub average_commits_per_day: f64,
+    pub average_commits_per_hour_in_most_active_hour: f64,
+    pub average_commits_per_hour: f64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
