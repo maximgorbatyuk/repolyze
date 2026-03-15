@@ -26,8 +26,12 @@ pub fn render_analysis_header(repos: &[RepositoryAnalysis], elapsed: Duration) -
         }
     }
 
-    let period_start = earliest.map(format_date).unwrap_or_else(|| "?".to_string());
-    let period_end = latest.map(format_date).unwrap_or_else(|| "?".to_string());
+    let period_start = earliest
+        .map(format_period_datetime)
+        .unwrap_or_else(|| "?".to_string());
+    let period_end = latest
+        .map(format_period_datetime)
+        .unwrap_or_else(|| "?".to_string());
     let elapsed_str = format_duration(elapsed);
 
     let mut out = String::new();
@@ -41,9 +45,21 @@ pub fn render_analysis_header(repos: &[RepositoryAnalysis], elapsed: Duration) -
     out
 }
 
-/// Extract date portion from an ISO 8601 timestamp (or return as-is if short).
-fn format_date(ts: &str) -> String {
-    ts.split('T').next().unwrap_or(ts).to_string()
+fn format_period_datetime(ts: &str) -> String {
+    let Some((date, time_with_offset)) = ts.split_once('T') else {
+        return ts.to_string();
+    };
+
+    let time_without_zone = time_with_offset
+        .split(['+', '-', 'Z'])
+        .next()
+        .unwrap_or(time_with_offset);
+    let time = time_without_zone
+        .split('.')
+        .next()
+        .unwrap_or(time_without_zone);
+
+    format!("{date} {time}")
 }
 
 fn format_duration(d: Duration) -> String {
@@ -310,5 +326,37 @@ mod tests {
             render_user_activity_table(&[]),
             "No activity data available."
         );
+    }
+
+    #[test]
+    fn render_analysis_header_preserves_full_datetimes_in_period() {
+        let repos = vec![RepositoryAnalysis {
+            repository: repolyze_core::model::RepositoryTarget {
+                root: "/tmp/repo".into(),
+            },
+            contributions: repolyze_core::model::ContributionSummary {
+                contributors: vec![repolyze_core::model::ContributorStats {
+                    name: "Alice".to_string(),
+                    email: "alice@example.com".to_string(),
+                    commits: 1,
+                    lines_added: 1,
+                    lines_deleted: 0,
+                    net_lines: 1,
+                    files_touched: 1,
+                    active_days: 1,
+                    first_commit: "2025-01-01T09:10:11+00:00".to_string(),
+                    last_commit: "2025-01-15T10:20:30+00:00".to_string(),
+                }],
+                activity_by_contributor: vec![],
+                total_commits: 1,
+            },
+            activity: repolyze_core::model::ActivitySummary::default(),
+            size: repolyze_core::model::SizeMetrics::default(),
+        }];
+
+        let header = render_analysis_header(&repos, Duration::from_millis(250));
+
+        assert!(header.contains("2025-01-01 09:10:11"));
+        assert!(header.contains("2025-01-15 10:20:30"));
     }
 }
