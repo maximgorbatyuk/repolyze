@@ -21,7 +21,7 @@ pub fn build_activity_summary(commits: &[ParsedCommit]) -> ActivitySummary {
 }
 
 /// Parse hour (0-23) and weekday (0=Monday..6=Sunday) from an ISO 8601 timestamp.
-fn parse_hour_and_weekday(timestamp: &str) -> Option<(usize, usize)> {
+pub(crate) fn parse_hour_and_weekday(timestamp: &str) -> Option<(usize, usize)> {
     // Format: 2025-01-15T10:00:00+00:00
     // We need the date part for weekday and time part for hour
     let t_pos = timestamp.find('T')?;

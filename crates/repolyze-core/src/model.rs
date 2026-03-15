@@ -24,6 +24,7 @@ pub struct RepositoryAnalysis {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContributionSummary {
     pub contributors: Vec<ContributorStats>,
+    pub activity_by_contributor: Vec<ContributorActivityStats>,
     pub total_commits: u64,
 }
 
@@ -39,6 +40,17 @@ pub struct ContributorStats {
     pub active_days: u64,
     pub first_commit: String,
     pub last_commit: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContributorActivityStats {
+    pub email: String,
+    pub weekday_commits: [u32; 7],
+    pub hour_commits: [u32; 24],
+    pub active_dates: std::collections::BTreeSet<String>,
+    pub active_dates_by_weekday: [std::collections::BTreeSet<String>; 7],
+    pub active_hour_buckets: std::collections::BTreeSet<String>,
+    pub active_hour_buckets_by_hour: [std::collections::BTreeSet<String>; 24],
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

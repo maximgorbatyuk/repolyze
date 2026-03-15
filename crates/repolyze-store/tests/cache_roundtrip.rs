@@ -30,6 +30,7 @@ fn cache_roundtrip_restores_repository_analysis() {
                 first_commit: "2025-01-01T09:00:00+00:00".to_string(),
                 last_commit: "2025-01-15T10:00:00+00:00".to_string(),
             }],
+            activity_by_contributor: vec![],
             total_commits: 3,
         },
         activity: ActivitySummary::default(),

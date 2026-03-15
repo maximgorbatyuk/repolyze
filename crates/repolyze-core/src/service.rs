@@ -204,6 +204,7 @@ mod tests {
             },
             contributions: ContributionSummary {
                 contributors: vec![],
+                activity_by_contributor: vec![],
                 total_commits: 0,
             },
             activity: ActivitySummary::default(),

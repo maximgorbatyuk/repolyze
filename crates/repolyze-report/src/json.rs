@@ -36,6 +36,7 @@ mod tests {
                         first_commit: "2025-01-01".to_string(),
                         last_commit: "2025-01-15".to_string(),
                     }],
+                    activity_by_contributor: vec![],
                     total_commits: 5,
                 },
                 activity: ActivitySummary::default(),

@@ -79,6 +79,7 @@ mod tests {
             },
             contributions: ContributionSummary {
                 contributors,
+                activity_by_contributor: vec![],
                 total_commits,
             },
             activity: ActivitySummary::default(),
@@ -141,6 +142,7 @@ mod tests {
                     first_commit: "2025-01-01".to_string(),
                     last_commit: "2025-01-02".to_string(),
                 }],
+                activity_by_contributor: vec![],
                 total_commits: 2,
             },
             activity: ActivitySummary::default(),
