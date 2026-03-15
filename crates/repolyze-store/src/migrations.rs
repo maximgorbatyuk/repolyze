@@ -53,4 +53,48 @@ CREATE INDEX IF NOT EXISTS idx_analysis_snapshots_repo_created
 
 CREATE INDEX IF NOT EXISTS idx_scan_runs_repo_started
   ON scan_runs (repository_id, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS contributors (
+  id INTEGER PRIMARY KEY,
+  canonical_email TEXT NOT NULL UNIQUE,
+  display_name_last_seen TEXT,
+  first_seen_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS repository_commits (
+  id INTEGER PRIMARY KEY,
+  repository_id INTEGER NOT NULL REFERENCES repositories(id),
+  contributor_id INTEGER NOT NULL REFERENCES contributors(id),
+  commit_hash TEXT NOT NULL,
+  author_name TEXT NOT NULL,
+  author_email TEXT NOT NULL,
+  committed_at TEXT NOT NULL,
+  commit_date TEXT NOT NULL,
+  commit_hour INTEGER NOT NULL,
+  commit_weekday INTEGER NOT NULL,
+  files_changed_count INTEGER NOT NULL,
+  lines_added INTEGER NOT NULL,
+  lines_deleted INTEGER NOT NULL,
+  lines_modified INTEGER NOT NULL,
+  UNIQUE (repository_id, commit_hash)
+);
+
+CREATE TABLE IF NOT EXISTS commit_file_changes (
+  id INTEGER PRIMARY KEY,
+  commit_id INTEGER NOT NULL REFERENCES repository_commits(id),
+  file_path TEXT NOT NULL,
+  additions INTEGER NOT NULL,
+  deletions INTEGER NOT NULL,
+  lines_modified INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_repository_commits_repo_datetime
+  ON repository_commits (repository_id, committed_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_repository_commits_contributor_datetime
+  ON repository_commits (contributor_id, committed_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_commit_file_changes_commit
+  ON commit_file_changes (commit_id);
 "#;
