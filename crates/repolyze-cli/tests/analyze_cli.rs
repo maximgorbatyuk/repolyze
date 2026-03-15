@@ -272,9 +272,7 @@ fn analyze_activity_outputs_ascii_table() {
     ])
     .assert()
     .success()
-    .stdout(predicate::str::contains(
-        "Average commits per day, in the most active day",
-    ));
+    .stdout(predicate::str::contains("Avg commits/day (best day)"));
 }
 
 #[test]

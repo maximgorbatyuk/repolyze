@@ -97,7 +97,8 @@ where
                     app.analysis_table = Some(render_user_activity_table(&rows));
                 }
                 AnalyzeView::All => {
-                    app.analysis_table = None;
+                    let rows = build_users_contribution_rows(&report.repositories);
+                    app.analysis_table = Some(render_users_contribution_table(&rows));
                 }
             }
 
