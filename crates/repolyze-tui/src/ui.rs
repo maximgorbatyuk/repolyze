@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 
-use crate::app::{AppState, Screen};
+use crate::app::{ANALYZE_MENU_ITEMS, AppState, Screen};
 
 const LOGO: &str = r#"
   ____                  _
@@ -27,6 +27,7 @@ pub fn draw(frame: &mut Frame, app: &AppState) {
     match app.active_screen {
         Screen::Home => draw_home(frame, app, area),
         Screen::Help => draw_help(frame, area),
+        Screen::AnalyzeMenu => draw_analyze_menu(frame, app, area),
         Screen::Analyze => draw_analyze(frame, app, area),
         Screen::Compare => draw_compare(frame, app, area),
         Screen::Errors => draw_errors(frame, app, area),
@@ -162,6 +163,45 @@ fn draw_help(frame: &mut Frame, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
+fn draw_analyze_menu(frame: &mut Frame, app: &AppState, area: Rect) {
+    let mut lines = vec![
+        Line::from(Span::styled(
+            " Analyze \u{2014} Select View",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+
+    for (i, (label, _)) in ANALYZE_MENU_ITEMS.iter().enumerate() {
+        let is_selected = i == app.analyze_menu_selected;
+        let (prefix, style) = if is_selected {
+            (
+                "\u{27a4} ",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else {
+            ("  ", Style::default())
+        };
+        lines.push(Line::from(Span::styled(
+            format!("{prefix}{}. {label}", i + 1),
+            style,
+        )));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(hints_line(&[
+        ("\u{2191}\u{2193}", "Navigate"),
+        ("Enter", "Select"),
+        ("Esc", "Home"),
+        ("Q", "Quit"),
+    ]));
+
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, area);
+}
+
 fn draw_analyze(frame: &mut Frame, app: &AppState, area: Rect) {
     let mut lines = vec![
         Line::from(Span::styled(
@@ -183,7 +223,12 @@ fn draw_analyze(frame: &mut Frame, app: &AppState, area: Rect) {
 
     lines.push(Line::from(format!(" Path: {}_", app.input_buffer)));
 
-    if let Some(report) = &app.analysis_result {
+    if let Some(table) = &app.analysis_table {
+        lines.push(Line::from(""));
+        for table_line in table.lines() {
+            lines.push(Line::from(format!(" {table_line}")));
+        }
+    } else if let Some(report) = &app.analysis_result {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             " \u{2500}\u{2500} Results \u{2500}\u{2500}",

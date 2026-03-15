@@ -10,12 +10,14 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
+use repolyze_core::analytics::{build_user_activity_rows, build_users_contribution_rows};
 use repolyze_core::input::resolve_inputs_with_failures;
 use repolyze_core::service::analyze_targets_with_store;
 use repolyze_git::backend::GitCliBackend;
 use repolyze_metrics::FilesystemMetricsBackend;
+use repolyze_report::table::{render_user_activity_table, render_users_contribution_table};
 
-use app::{AppAction, AppState, Screen};
+use app::{AnalyzeView, AppAction, AppState, Screen};
 
 pub fn run() -> anyhow::Result<()> {
     enable_raw_mode()?;
@@ -51,7 +53,42 @@ pub fn execute_pending_action(app: &mut AppState) -> anyhow::Result<()> {
     };
 
     match action {
-        AppAction::StartAnalyze(paths) | AppAction::StartCompare(paths) => {
+        AppAction::StartAnalyze { paths, view } => {
+            let (targets, input_failures) = resolve_inputs_with_failures(&paths);
+            let git = GitCliBackend;
+            let metrics = FilesystemMetricsBackend;
+            let store = open_store()?;
+            let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store);
+            let current_failure_count = input_failures.len() + report.failures.len();
+
+            if !input_failures.is_empty() {
+                let mut failures = input_failures;
+                failures.extend(report.failures);
+                report.failures = failures;
+            }
+
+            // Generate table for analytics views
+            match view {
+                AnalyzeView::UsersContribution => {
+                    let rows = build_users_contribution_rows(&report.repositories);
+                    app.analysis_table = Some(render_users_contribution_table(&rows));
+                }
+                AnalyzeView::Activity => {
+                    let rows = build_user_activity_rows(&report.repositories);
+                    app.analysis_table = Some(render_user_activity_table(&rows));
+                }
+                AnalyzeView::All => {
+                    app.analysis_table = None;
+                }
+            }
+
+            app.set_result(report);
+            if current_failure_count > 0 {
+                app.status_message =
+                    format!("Analysis complete with {current_failure_count} error(s)");
+            }
+        }
+        AppAction::StartCompare(paths) => {
             let (targets, input_failures) = resolve_inputs_with_failures(&paths);
             let git = GitCliBackend;
             let metrics = FilesystemMetricsBackend;

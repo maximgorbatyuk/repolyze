@@ -8,10 +8,25 @@ use repolyze_core::model::{ComparisonReport, PartialFailure};
 pub enum Screen {
     Home,
     Help,
+    AnalyzeMenu,
     Analyze,
     Compare,
     Errors,
 }
+
+/// Which analytics view the user selected.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AnalyzeView {
+    All,
+    UsersContribution,
+    Activity,
+}
+
+pub const ANALYZE_MENU_ITEMS: [(&str, AnalyzeView); 3] = [
+    ("All (full report)", AnalyzeView::All),
+    ("Users contribution", AnalyzeView::UsersContribution),
+    ("Most active days and hours", AnalyzeView::Activity),
+];
 
 /// Menu items shown in the home screen and sidebar.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,7 +49,7 @@ impl MenuItem {
 
     pub fn screen(&self) -> Screen {
         match self {
-            MenuItem::Analyze => Screen::Analyze,
+            MenuItem::Analyze => Screen::AnalyzeMenu,
             MenuItem::Compare => Screen::Compare,
             MenuItem::Help => Screen::Help,
             MenuItem::Errors => Screen::Errors,
@@ -56,7 +71,10 @@ impl fmt::Display for MenuItem {
 /// Actions that originate from user interaction but execute outside the TUI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppAction {
-    StartAnalyze(Vec<PathBuf>),
+    StartAnalyze {
+        paths: Vec<PathBuf>,
+        view: AnalyzeView,
+    },
     StartCompare(Vec<PathBuf>),
     ShowErrors,
 }
@@ -80,6 +98,12 @@ pub struct AppState {
     pub input_paths: Vec<PathBuf>,
     /// Status message shown in the bottom bar.
     pub status_message: String,
+    /// Selected index in the analyze submenu.
+    pub analyze_menu_selected: usize,
+    /// Selected analyze view.
+    pub selected_analyze_view: AnalyzeView,
+    /// ASCII table output for analytics views.
+    pub analysis_table: Option<String>,
 }
 
 impl Default for AppState {
@@ -106,6 +130,9 @@ impl AppState {
             input_buffer: String::new(),
             input_paths: Vec::new(),
             status_message: "Ready".to_string(),
+            analyze_menu_selected: 0,
+            selected_analyze_view: AnalyzeView::All,
+            analysis_table: None,
         }
     }
 
@@ -140,7 +167,30 @@ impl AppState {
     /// Dispatch an analyze action with the current input paths.
     pub fn dispatch_analyze(&mut self) {
         if !self.input_paths.is_empty() {
-            self.pending_action = Some(AppAction::StartAnalyze(self.input_paths.clone()));
+            self.pending_action = Some(AppAction::StartAnalyze {
+                paths: self.input_paths.clone(),
+                view: self.selected_analyze_view.clone(),
+            });
+        }
+    }
+
+    /// Select an analyze submenu item and advance to path entry.
+    pub fn select_analyze_view(&mut self) {
+        if let Some((_, view)) = ANALYZE_MENU_ITEMS.get(self.analyze_menu_selected) {
+            self.selected_analyze_view = view.clone();
+            self.active_screen = Screen::Analyze;
+        }
+    }
+
+    pub fn analyze_menu_up(&mut self) {
+        if self.analyze_menu_selected > 0 {
+            self.analyze_menu_selected -= 1;
+        }
+    }
+
+    pub fn analyze_menu_down(&mut self) {
+        if self.analyze_menu_selected + 1 < ANALYZE_MENU_ITEMS.len() {
+            self.analyze_menu_selected += 1;
         }
     }
 
@@ -203,9 +253,9 @@ mod tests {
     #[test]
     fn navigate_down_and_activate_analyze() {
         let mut app = AppState::new();
-        // selected = 0 is Analyze
+        // selected = 0 is Analyze → opens AnalyzeMenu
         app.activate_selected();
-        assert_eq!(app.active_screen, Screen::Analyze);
+        assert_eq!(app.active_screen, Screen::AnalyzeMenu);
     }
 
     #[test]
@@ -268,7 +318,7 @@ mod tests {
     fn go_home_returns_to_home_screen() {
         let mut app = AppState::new();
         app.activate_selected();
-        assert_eq!(app.active_screen, Screen::Analyze);
+        assert_ne!(app.active_screen, Screen::Home);
 
         app.go_home();
         assert_eq!(app.active_screen, Screen::Home);
@@ -282,7 +332,10 @@ mod tests {
 
         assert_eq!(
             app.pending_action,
-            Some(AppAction::StartAnalyze(vec![PathBuf::from("/tmp/repo")]))
+            Some(AppAction::StartAnalyze {
+                paths: vec![PathBuf::from("/tmp/repo")],
+                view: AnalyzeView::All,
+            })
         );
     }
 
@@ -337,9 +390,37 @@ mod tests {
     #[test]
     fn menu_item_screen_mapping() {
         assert_eq!(MenuItem::Help.screen(), Screen::Help);
-        assert_eq!(MenuItem::Analyze.screen(), Screen::Analyze);
+        assert_eq!(MenuItem::Analyze.screen(), Screen::AnalyzeMenu);
         assert_eq!(MenuItem::Compare.screen(), Screen::Compare);
         assert_eq!(MenuItem::Errors.screen(), Screen::Errors);
+    }
+
+    #[test]
+    fn analyze_menu_opens_before_path_entry() {
+        let mut app = AppState::new();
+        app.activate_selected();
+        assert_eq!(app.active_screen, Screen::AnalyzeMenu);
+    }
+
+    #[test]
+    fn analyze_users_contribution_dispatches_specialized_action() {
+        let mut app = AppState::new();
+        app.active_screen = Screen::AnalyzeMenu;
+        app.analyze_menu_selected = 1; // Users contribution
+        app.select_analyze_view();
+        assert_eq!(app.active_screen, Screen::Analyze);
+        assert_eq!(app.selected_analyze_view, AnalyzeView::UsersContribution);
+
+        app.input_paths.push(PathBuf::from("/tmp/repo"));
+        app.dispatch_analyze();
+
+        assert_eq!(
+            app.pending_action,
+            Some(AppAction::StartAnalyze {
+                paths: vec![PathBuf::from("/tmp/repo")],
+                view: AnalyzeView::UsersContribution,
+            })
+        );
     }
 
     #[test]

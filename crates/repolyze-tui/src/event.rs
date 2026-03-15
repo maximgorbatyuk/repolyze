@@ -7,6 +7,7 @@ pub fn handle_key(app: &mut AppState, code: KeyCode) {
     match app.active_screen {
         Screen::Home => handle_home(app, code),
         Screen::Help | Screen::Errors => handle_global(app, code),
+        Screen::AnalyzeMenu => handle_analyze_menu(app, code),
         Screen::Analyze => handle_input_screen(app, code, false),
         Screen::Compare => handle_input_screen(app, code, true),
     }
@@ -37,6 +38,18 @@ fn handle_global(app: &mut AppState, code: KeyCode) {
         KeyCode::Char('?') => {
             app.active_screen = Screen::Help;
         }
+        _ => {}
+    }
+}
+
+/// Key handling for the Analyze submenu.
+fn handle_analyze_menu(app: &mut AppState, code: KeyCode) {
+    match code {
+        KeyCode::Char('q') => app.quit(),
+        KeyCode::Up | KeyCode::Char('k') => app.analyze_menu_up(),
+        KeyCode::Down | KeyCode::Char('j') => app.analyze_menu_down(),
+        KeyCode::Enter => app.select_analyze_view(),
+        KeyCode::Esc => app.go_home(),
         _ => {}
     }
 }
