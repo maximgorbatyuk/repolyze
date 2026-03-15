@@ -19,4 +19,7 @@ pub enum RepolyzeError {
 
     #[error("store error: {0}")]
     Store(String),
+
+    #[error("no git repositories found under directory: {0}")]
+    NoRepositoriesFound(PathBuf),
 }

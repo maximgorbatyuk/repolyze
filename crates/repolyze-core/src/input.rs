@@ -13,7 +13,7 @@ pub fn resolve_inputs(paths: &[PathBuf]) -> Result<Vec<RepositoryTarget>, Repoly
     let mut targets = Vec::new();
 
     for path in paths {
-        targets.push(resolve_input(path)?);
+        targets.extend(resolve_input(path)?);
     }
 
     Ok(dedup_targets(targets))
@@ -27,7 +27,7 @@ pub fn resolve_inputs_with_failures(
 
     for path in paths {
         match resolve_input(path) {
-            Ok(target) => targets.push(target),
+            Ok(discovered) => targets.extend(discovered),
             Err(error) => failures.push(PartialFailure {
                 path: path.clone(),
                 reason: error.to_string(),
@@ -38,13 +38,29 @@ pub fn resolve_inputs_with_failures(
     (dedup_targets(targets), failures)
 }
 
-pub fn resolve_input(path: &Path) -> Result<RepositoryTarget, RepolyzeError> {
+pub fn resolve_input(path: &Path) -> Result<Vec<RepositoryTarget>, RepolyzeError> {
     let canonical = path
         .canonicalize()
         .map_err(|_| RepolyzeError::PathNotFound(path.to_path_buf()))?;
 
-    let root = find_git_root(&canonical)?;
-    Ok(RepositoryTarget { root })
+    // Try upward walk first — if inside a repo, use that repo
+    if let Ok(root) = find_git_root(&canonical) {
+        return Ok(vec![RepositoryTarget { root }]);
+    }
+
+    // If it's a directory, scan downward for nested repos
+    if canonical.is_dir() {
+        let roots = discover_git_roots(&canonical);
+        if roots.is_empty() {
+            return Err(RepolyzeError::NoRepositoriesFound(canonical));
+        }
+        return Ok(roots
+            .into_iter()
+            .map(|root| RepositoryTarget { root })
+            .collect());
+    }
+
+    Err(RepolyzeError::NotAGitRepository(path.to_path_buf()))
 }
 
 fn dedup_targets(targets: Vec<RepositoryTarget>) -> Vec<RepositoryTarget> {
@@ -59,6 +75,37 @@ fn dedup_targets(targets: Vec<RepositoryTarget>) -> Vec<RepositoryTarget> {
 
     deduped.sort_by(|a, b| a.root.cmp(&b.root));
     deduped
+}
+
+/// Recursively scan a directory for Git repositories.
+/// Stops descending into a directory once a `.git` marker is found there.
+fn discover_git_roots(dir: &Path) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    discover_git_roots_recursive(dir, &mut roots);
+    roots
+}
+
+fn discover_git_roots_recursive(dir: &Path, roots: &mut Vec<PathBuf>) {
+    // .git can be a directory (normal repo) or a file (worktree/submodule)
+    if dir.join(".git").exists() {
+        if let Ok(canonical) = dir.canonicalize() {
+            roots.push(canonical);
+        }
+        // Don't descend further — this is a repo root
+        return;
+    }
+
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            discover_git_roots_recursive(&path, roots);
+        }
+    }
 }
 
 fn find_git_root(path: &Path) -> Result<PathBuf, RepolyzeError> {
@@ -114,8 +161,8 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            matches!(err, RepolyzeError::NotAGitRepository(_)),
-            "expected NotAGitRepository, got: {err}"
+            matches!(err, RepolyzeError::NoRepositoriesFound(_)),
+            "expected NoRepositoriesFound, got: {err}"
         );
     }
 
@@ -170,5 +217,63 @@ mod tests {
         assert_eq!(targets.len(), 1);
         assert_eq!(failures.len(), 1);
         assert!(failures[0].reason.contains("path does not exist"));
+    }
+
+    fn create_temp_git_repo_at(path: PathBuf) -> PathBuf {
+        std::fs::create_dir_all(&path).unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(&path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(&path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(&path)
+            .output()
+            .unwrap();
+        path.canonicalize().unwrap()
+    }
+
+    #[test]
+    fn resolve_inputs_with_failures_discovers_nested_git_repositories() {
+        let root = tempfile::tempdir().unwrap();
+        let repo_a = create_temp_git_repo_at(root.path().join("workspace/repo-a"));
+        let repo_b = create_temp_git_repo_at(root.path().join("workspace/tools/repo-b"));
+
+        let (targets, failures) = resolve_inputs_with_failures(&[root.path().join("workspace")]);
+
+        let roots: Vec<_> = targets.into_iter().map(|t| t.root).collect();
+        assert_eq!(roots.len(), 2);
+        assert!(roots.contains(&repo_a));
+        assert!(roots.contains(&repo_b));
+        assert!(failures.is_empty());
+    }
+
+    #[test]
+    fn resolve_inputs_prefers_enclosing_git_repository_for_subdirectory() {
+        let repo = create_temp_git_repo();
+        let nested = repo.path().join("src/deep");
+        std::fs::create_dir_all(&nested).unwrap();
+
+        let targets = resolve_inputs(&[nested]).unwrap();
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].root, repo.path().canonicalize().unwrap());
+    }
+
+    #[test]
+    fn resolve_inputs_with_failures_reports_directory_without_repositories() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let (targets, failures) = resolve_inputs_with_failures(&[dir.path().to_path_buf()]);
+
+        assert!(targets.is_empty());
+        assert_eq!(failures.len(), 1);
+        assert!(failures[0].reason.contains("no git repositories found"));
     }
 }
