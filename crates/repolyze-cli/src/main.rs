@@ -20,12 +20,15 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Tui) | None => repolyze_tui::run()?,
         Some(Commands::Analyze(args)) => {
             let repos = default_repos(args.repos);
-            let output = run::run_analyze(&repos, &args.view, &args.format)?;
+            let format = args
+                .format
+                .unwrap_or_else(|| crate::args::OutputFormat::default_for_view(&args.view));
+            let output = run::run_analyze(&repos, &args.view, &format)?;
             write_output(&output, args.output.as_deref())?;
         }
         Some(Commands::Compare(args)) => {
-            let output =
-                run::run_analyze(&args.repos, &crate::args::AnalyzeView::All, &args.format)?;
+            let format: crate::args::OutputFormat = args.format.into();
+            let output = run::run_analyze(&args.repos, &crate::args::AnalyzeView::All, &format)?;
             write_output(&output, args.output.as_deref())?;
         }
     }

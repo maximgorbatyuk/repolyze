@@ -276,3 +276,62 @@ fn analyze_activity_outputs_ascii_table() {
         "Average commits per day, in the most active day",
     ));
 }
+
+#[test]
+fn analyze_users_contribution_defaults_to_table_format() {
+    let workspace = create_workspace_with_two_repos();
+
+    let mut cmd = Command::cargo_bin("repolyze").unwrap();
+    cmd.args([
+        "analyze",
+        "users-contribution",
+        "--repo",
+        workspace.path().to_str().unwrap(),
+    ])
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("Most active week day"));
+}
+
+#[test]
+fn analyze_recomputes_when_worktree_is_dirty() {
+    let repo = create_fixture_repo();
+
+    let first = Command::cargo_bin("repolyze")
+        .unwrap()
+        .args([
+            "analyze",
+            "--repo",
+            repo.path().to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert!(first.status.success());
+    let first_json: serde_json::Value = serde_json::from_slice(&first.stdout).unwrap();
+    assert_eq!(
+        first_json["repositories"][0]["size"]["files"].as_u64(),
+        Some(1)
+    );
+
+    std::fs::write(repo.path().join("NOTES.md"), "notes\n").unwrap();
+
+    let second = Command::cargo_bin("repolyze")
+        .unwrap()
+        .args([
+            "analyze",
+            "--repo",
+            repo.path().to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert!(second.status.success());
+    let second_json: serde_json::Value = serde_json::from_slice(&second.stdout).unwrap();
+    assert_eq!(
+        second_json["repositories"][0]["size"]["files"].as_u64(),
+        Some(2)
+    );
+}

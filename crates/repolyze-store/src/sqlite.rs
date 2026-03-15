@@ -1,10 +1,14 @@
 use std::path::Path;
 
 use rusqlite::{Connection, params};
+use serde_json::from_str;
 
 use crate::error::StoreError;
 use crate::migrations::{MIGRATION_V1, SCHEMA_VERSION};
-use crate::models::{CommitFileChangeRecord, CommitRecord, ContributorRecord};
+use crate::models::{
+    CommitFileChangeRecord, CommitRecord, ContributorRecord, UserActivityRowRecord,
+    UsersContributionRowRecord,
+};
 
 pub struct SqliteStore {
     conn: Connection,
@@ -167,7 +171,18 @@ impl SqliteStore {
         let now = now_unix_secs();
         self.conn.execute(
             "INSERT INTO analysis_snapshots (repository_id, history_scope, head_commit_hash, branch_name, analysis_period_start_at, analysis_period_end_at, commits_count, contributors_count, analysis_payload_json, snapshot_created_at, repolyze_version, schema_version)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+             ON CONFLICT(repository_id, history_scope, head_commit_hash) DO UPDATE SET
+               branch_name = excluded.branch_name,
+               analysis_period_start_at = excluded.analysis_period_start_at,
+               analysis_period_end_at = excluded.analysis_period_end_at,
+               commits_count = excluded.commits_count,
+               contributors_count = excluded.contributors_count,
+               analysis_payload_json = excluded.analysis_payload_json,
+               snapshot_created_at = excluded.snapshot_created_at,
+               repolyze_version = excluded.repolyze_version,
+               schema_version = excluded.schema_version,
+               is_complete = 1",
             params![
                 repository_id,
                 history_scope,
@@ -183,7 +198,12 @@ impl SqliteStore {
                 crate::migrations::SCHEMA_VERSION,
             ],
         )?;
-        Ok(self.conn.last_insert_rowid())
+        let snapshot_id = self.conn.query_row(
+            "SELECT id FROM analysis_snapshots WHERE repository_id = ?1 AND history_scope = ?2 AND head_commit_hash = ?3",
+            params![repository_id, history_scope, head_commit_hash],
+            |row| row.get(0),
+        )?;
+        Ok(snapshot_id)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -285,232 +305,68 @@ impl SqliteStore {
     pub fn users_contribution_rows_for_snapshots(
         &self,
         snapshot_ids: &[i64],
-    ) -> Result<Vec<crate::models::UsersContributionRowRecord>, StoreError> {
-        if snapshot_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let in_clause = parameterized_in_clause(snapshot_ids.len());
-        let sql = format!(
-            "SELECT c.canonical_email, s.commits_count, s.lines_modified, s.files_touched_count, s.most_active_weekday
-             FROM snapshot_contributor_summaries s
-             JOIN contributors c ON c.id = s.contributor_id
-             WHERE s.snapshot_id IN ({in_clause})
-             ORDER BY s.commits_count DESC, c.canonical_email ASC"
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let params = rusqlite::params_from_iter(snapshot_ids.iter());
-        let rows = stmt.query_map(params, |row| {
-            let email: String = row.get(0)?;
-            let commits: i64 = row.get(1)?;
-            let lines_modified: i64 = row.get(2)?;
-            let files_touched: i64 = row.get(3)?;
-            let most_active_weekday: Option<i64> = row.get(4)?;
-            let lines_per_commit = if commits > 0 {
-                lines_modified as f64 / commits as f64
-            } else {
-                0.0
-            };
-            let weekday_name = most_active_weekday
-                .map(weekday_name_from_number)
-                .unwrap_or_else(|| "N/A".to_string());
-            Ok(crate::models::UsersContributionRowRecord {
-                email,
-                commits,
-                lines_modified,
-                lines_per_commit,
-                files_touched,
-                most_active_week_day: weekday_name,
-            })
-        })?;
-        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    ) -> Result<Vec<UsersContributionRowRecord>, StoreError> {
+        let analyses = self.load_analyses_for_snapshot_ids(snapshot_ids)?;
+        Ok(
+            repolyze_core::analytics::build_users_contribution_rows(&analyses)
+                .into_iter()
+                .map(|row| UsersContributionRowRecord {
+                    email: row.email,
+                    commits: row.commits as i64,
+                    lines_modified: row.lines_modified as i64,
+                    lines_per_commit: row.lines_per_commit,
+                    files_touched: row.files_touched as i64,
+                    most_active_week_day: row.most_active_week_day,
+                })
+                .collect(),
+        )
     }
 
     pub fn user_activity_rows_for_snapshots(
         &self,
         snapshot_ids: &[i64],
-    ) -> Result<Vec<crate::models::UserActivityRowRecord>, StoreError> {
+    ) -> Result<Vec<UserActivityRowRecord>, StoreError> {
+        let analyses = self.load_analyses_for_snapshot_ids(snapshot_ids)?;
+        Ok(
+            repolyze_core::analytics::build_user_activity_rows(&analyses)
+                .into_iter()
+                .map(|row| UserActivityRowRecord {
+                    email: row.email,
+                    most_active_week_day: row.most_active_week_day,
+                    average_commits_per_day_in_most_active_day: row
+                        .average_commits_per_day_in_most_active_day,
+                    average_commits_per_day: row.average_commits_per_day,
+                    average_commits_per_hour_in_most_active_hour: row
+                        .average_commits_per_hour_in_most_active_hour,
+                    average_commits_per_hour: row.average_commits_per_hour,
+                })
+                .collect(),
+        )
+    }
+
+    fn load_analyses_for_snapshot_ids(
+        &self,
+        snapshot_ids: &[i64],
+    ) -> Result<Vec<repolyze_core::model::RepositoryAnalysis>, StoreError> {
         if snapshot_ids.is_empty() {
             return Ok(Vec::new());
         }
+
         let in_clause = parameterized_in_clause(snapshot_ids.len());
-
-        // Batch-fetch all weekday stats for these snapshots
-        let weekday_sql = format!(
-            "SELECT c.canonical_email, w.weekday, w.commits_count, w.active_dates_count
-             FROM snapshot_contributor_weekday_stats w
-             JOIN contributors c ON c.id = w.contributor_id
-             WHERE w.snapshot_id IN ({in_clause})"
-        );
-        let mut weekday_map: std::collections::HashMap<String, Vec<(i64, i64, i64)>> =
-            std::collections::HashMap::new();
-        {
-            let mut stmt = self.conn.prepare(&weekday_sql)?;
-            let params = rusqlite::params_from_iter(snapshot_ids.iter());
-            let rows = stmt.query_map(params, |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, i64>(3)?,
-                ))
-            })?;
-            for row in rows {
-                let (email, weekday, commits, dates) = row?;
-                weekday_map
-                    .entry(email)
-                    .or_default()
-                    .push((weekday, commits, dates));
-            }
-        }
-
-        // Batch-fetch all hour stats for these snapshots
-        let hour_sql = format!(
-            "SELECT c.canonical_email, h.hour_of_day, h.commits_count, h.active_hour_buckets_count
-             FROM snapshot_contributor_hour_stats h
-             JOIN contributors c ON c.id = h.contributor_id
-             WHERE h.snapshot_id IN ({in_clause})"
-        );
-        let mut hour_map: std::collections::HashMap<String, Vec<(i64, i64, i64)>> =
-            std::collections::HashMap::new();
-        {
-            let mut stmt = self.conn.prepare(&hour_sql)?;
-            let params = rusqlite::params_from_iter(snapshot_ids.iter());
-            let rows = stmt.query_map(params, |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, i64>(3)?,
-                ))
-            })?;
-            for row in rows {
-                let (email, hour, commits, buckets) = row?;
-                hour_map
-                    .entry(email)
-                    .or_default()
-                    .push((hour, commits, buckets));
-            }
-        }
-
-        // Main summary query
         let sql = format!(
-            "SELECT c.canonical_email, s.commits_count, s.active_days_count, s.most_active_weekday, s.most_active_hour
-             FROM snapshot_contributor_summaries s
-             JOIN contributors c ON c.id = s.contributor_id
-             WHERE s.snapshot_id IN ({in_clause})
-             ORDER BY s.commits_count DESC, c.canonical_email ASC"
+            "SELECT analysis_payload_json FROM analysis_snapshots WHERE id IN ({in_clause}) ORDER BY id"
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let params = rusqlite::params_from_iter(snapshot_ids.iter());
-        let rows = stmt.query_map(params, |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, i64>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, Option<i64>>(3)?,
-                row.get::<_, Option<i64>>(4)?,
-            ))
-        })?;
+        let rows = stmt.query_map(params, |row| row.get::<_, String>(0))?;
 
-        let mut result = Vec::new();
-        for row in rows {
-            let (email, commits_count, active_days_count, most_active_weekday, most_active_hour) =
-                row?;
-
-            let weekday_name = most_active_weekday
-                .map(weekday_name_from_number)
-                .unwrap_or_else(|| "N/A".to_string());
-
-            let weekday_stats = weekday_map.get(&email);
-            let hour_stats = hour_map.get(&email);
-
-            let most_active_weekday_commits = most_active_weekday
-                .and_then(|wd| {
-                    weekday_stats.map(|stats| {
-                        stats
-                            .iter()
-                            .filter(|(w, _, _)| *w == wd)
-                            .map(|(_, c, _)| c)
-                            .sum::<i64>()
-                    })
-                })
-                .unwrap_or(0);
-
-            let most_active_weekday_dates = most_active_weekday
-                .and_then(|wd| {
-                    weekday_stats.map(|stats| {
-                        stats
-                            .iter()
-                            .filter(|(w, _, _)| *w == wd)
-                            .map(|(_, _, d)| d)
-                            .sum::<i64>()
-                    })
-                })
-                .unwrap_or(0);
-
-            let most_active_hour_commits = most_active_hour
-                .and_then(|h| {
-                    hour_stats.map(|stats| {
-                        stats
-                            .iter()
-                            .filter(|(hr, _, _)| *hr == h)
-                            .map(|(_, c, _)| c)
-                            .sum::<i64>()
-                    })
-                })
-                .unwrap_or(0);
-
-            let most_active_hour_buckets = most_active_hour
-                .and_then(|h| {
-                    hour_stats.map(|stats| {
-                        stats
-                            .iter()
-                            .filter(|(hr, _, _)| *hr == h)
-                            .map(|(_, _, b)| b)
-                            .sum::<i64>()
-                    })
-                })
-                .unwrap_or(0);
-
-            let total_hour_buckets: i64 = hour_stats
-                .map(|stats| stats.iter().map(|(_, _, b)| b).sum())
-                .unwrap_or(0);
-
-            let average_commits_per_day = if active_days_count > 0 {
-                commits_count as f64 / active_days_count as f64
-            } else {
-                0.0
-            };
-
-            let average_commits_per_day_in_most_active_day = if most_active_weekday_dates > 0 {
-                most_active_weekday_commits as f64 / most_active_weekday_dates as f64
-            } else {
-                0.0
-            };
-
-            let average_commits_per_hour = if total_hour_buckets > 0 {
-                commits_count as f64 / total_hour_buckets as f64
-            } else {
-                0.0
-            };
-
-            let average_commits_per_hour_in_most_active_hour = if most_active_hour_buckets > 0 {
-                most_active_hour_commits as f64 / most_active_hour_buckets as f64
-            } else {
-                0.0
-            };
-
-            result.push(crate::models::UserActivityRowRecord {
-                email,
-                most_active_week_day: weekday_name,
-                average_commits_per_day_in_most_active_day,
-                average_commits_per_day,
-                average_commits_per_hour_in_most_active_hour,
-                average_commits_per_hour,
-            });
-        }
-
-        Ok(result)
+        rows.map(|row| {
+            let json = row?;
+            from_str::<repolyze_core::model::RepositoryAnalysis>(&json).map_err(|e| {
+                StoreError::Serialization(format!("failed to deserialize snapshot payload: {e}"))
+            })
+        })
+        .collect()
     }
 }
 
@@ -539,9 +395,16 @@ impl repolyze_core::service::AnalysisStore for SqliteStore {
             .query_row(
                 "SELECT analysis_payload_json FROM analysis_snapshots
                  WHERE repository_id = ?1 AND history_scope = ?2 AND head_commit_hash = ?3
+                 AND repolyze_version = ?4 AND schema_version = ?5
                  AND is_complete = 1
                  ORDER BY snapshot_created_at DESC LIMIT 1",
-                params![repo_id, key.history_scope, key.head_commit_hash],
+                params![
+                    repo_id,
+                    key.history_scope,
+                    key.head_commit_hash,
+                    env!("CARGO_PKG_VERSION"),
+                    SCHEMA_VERSION,
+                ],
                 |row| row.get(0),
             )
             .ok();
@@ -586,19 +449,126 @@ impl repolyze_core::service::AnalysisStore for SqliteStore {
                 .upsert_repository(&canonical_path, &display_name)
                 .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
 
-            self.insert_snapshot_header(
-                repo_id,
-                &key.history_scope,
-                &key.head_commit_hash,
-                key.branch_name.as_deref(),
-                None,
-                None,
-                analysis.contributions.total_commits as i64,
-                analysis.contributions.contributors.len() as i64,
-                &json,
-                env!("CARGO_PKG_VERSION"),
-            )
-            .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
+            let analysis_period_start_at = analysis
+                .contributions
+                .contributors
+                .iter()
+                .map(|c| c.first_commit.as_str())
+                .filter(|value| !value.is_empty())
+                .min()
+                .map(str::to_string);
+            let analysis_period_end_at = analysis
+                .contributions
+                .contributors
+                .iter()
+                .map(|c| c.last_commit.as_str())
+                .filter(|value| !value.is_empty())
+                .max()
+                .map(str::to_string);
+
+            let snapshot_id = self
+                .insert_snapshot_header(
+                    repo_id,
+                    &key.history_scope,
+                    &key.head_commit_hash,
+                    key.branch_name.as_deref(),
+                    analysis_period_start_at.as_deref(),
+                    analysis_period_end_at.as_deref(),
+                    analysis.contributions.total_commits as i64,
+                    analysis.contributions.contributors.len() as i64,
+                    &json,
+                    env!("CARGO_PKG_VERSION"),
+                )
+                .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
+
+            self.conn
+                .execute(
+                    "DELETE FROM snapshot_contributor_summaries WHERE snapshot_id = ?1",
+                    params![snapshot_id],
+                )
+                .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
+            self.conn
+                .execute(
+                    "DELETE FROM snapshot_contributor_weekday_stats WHERE snapshot_id = ?1",
+                    params![snapshot_id],
+                )
+                .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
+            self.conn
+                .execute(
+                    "DELETE FROM snapshot_contributor_hour_stats WHERE snapshot_id = ?1",
+                    params![snapshot_id],
+                )
+                .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
+
+            let activity_by_email: std::collections::HashMap<_, _> = analysis
+                .contributions
+                .activity_by_contributor
+                .iter()
+                .map(|activity| (activity.email.to_lowercase(), activity))
+                .collect();
+
+            for contributor in &analysis.contributions.contributors {
+                let contributor_id = self
+                    .upsert_contributor(&ContributorRecord::new(
+                        &contributor.email,
+                        &contributor.name,
+                    ))
+                    .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
+
+                let activity = activity_by_email
+                    .get(&contributor.email.to_lowercase())
+                    .copied();
+                let most_active_weekday =
+                    activity.map(|entry| most_active_index(&entry.weekday_commits) as i64);
+                let most_active_hour =
+                    activity.map(|entry| most_active_index(&entry.hour_commits) as i64);
+
+                self.upsert_snapshot_contributor_summary(
+                    snapshot_id,
+                    contributor_id,
+                    contributor.commits as i64,
+                    contributor.lines_added as i64,
+                    contributor.lines_deleted as i64,
+                    (contributor.lines_added + contributor.lines_deleted) as i64,
+                    contributor.files_touched as i64,
+                    contributor.active_days as i64,
+                    &contributor.first_commit,
+                    &contributor.last_commit,
+                    most_active_weekday,
+                    most_active_hour,
+                )
+                .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
+
+                if let Some(activity) = activity {
+                    for (weekday, commits_count) in activity.weekday_commits.iter().enumerate() {
+                        if *commits_count == 0 {
+                            continue;
+                        }
+                        self.upsert_snapshot_contributor_weekday_stat(
+                            snapshot_id,
+                            contributor_id,
+                            weekday as i64,
+                            *commits_count as i64,
+                            activity.active_dates_by_weekday[weekday].len() as i64,
+                        )
+                        .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
+                    }
+
+                    for (hour, commits_count) in activity.hour_commits.iter().enumerate() {
+                        if *commits_count == 0 {
+                            continue;
+                        }
+                        self.upsert_snapshot_contributor_hour_stat(
+                            snapshot_id,
+                            contributor_id,
+                            hour as i64,
+                            *commits_count as i64,
+                            activity.active_hour_buckets_by_hour[hour].len() as i64,
+                        )
+                        .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
+                    }
+                }
+            }
 
             Ok(())
         })();
@@ -616,10 +586,14 @@ impl repolyze_core::service::AnalysisStore for SqliteStore {
         result
     }
 
-    fn record_scan_failure(
+    fn record_scan_result(
         &self,
+        key: Option<&repolyze_core::service::RepositoryCacheMetadata>,
         repository_root: &std::path::Path,
-        reason: &str,
+        trigger_source: &str,
+        cache_status: &str,
+        status: &str,
+        failure_reason: Option<&str>,
     ) -> Result<(), repolyze_core::error::RepolyzeError> {
         let canonical_path = repository_root.to_string_lossy().to_string();
         let display_name = repository_root
@@ -631,12 +605,23 @@ impl repolyze_core::service::AnalysisStore for SqliteStore {
             .upsert_repository(&canonical_path, &display_name)
             .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
 
+        let snapshot_id = key
+            .and_then(|metadata| {
+                self.conn
+                    .query_row(
+                        "SELECT id FROM analysis_snapshots WHERE repository_id = ?1 AND history_scope = ?2 AND head_commit_hash = ?3 ORDER BY snapshot_created_at DESC LIMIT 1",
+                        params![repo_id, metadata.history_scope, metadata.head_commit_hash],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .ok()
+            });
+
         let now = now_unix_secs();
         self.conn
             .execute(
-                "INSERT INTO scan_runs (repository_id, trigger_source, cache_status, started_at, status, failure_reason)
-                 VALUES (?1, 'cli', 'miss', ?2, 'failed', ?3)",
-                params![repo_id, now, reason],
+                "INSERT INTO scan_runs (repository_id, snapshot_id, trigger_source, cache_status, started_at, finished_at, status, failure_reason)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![repo_id, snapshot_id, trigger_source, cache_status, now, now, status, failure_reason],
             )
             .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
 
@@ -660,16 +645,11 @@ fn now_unix_secs() -> String {
     format!("{}", duration.as_secs())
 }
 
-fn weekday_name_from_number(weekday: i64) -> String {
-    match weekday {
-        0 => "Sunday",
-        1 => "Monday",
-        2 => "Tuesday",
-        3 => "Wednesday",
-        4 => "Thursday",
-        5 => "Friday",
-        6 => "Saturday",
-        _ => "Unknown",
-    }
-    .to_string()
+fn most_active_index(values: &[u32]) -> usize {
+    values
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, value)| *value)
+        .map(|(index, _)| index)
+        .unwrap_or(0)
 }

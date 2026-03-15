@@ -38,8 +38,8 @@ pub struct AnalyzeArgs {
     pub repos: Vec<PathBuf>,
 
     /// Output format
-    #[arg(long, default_value = "json")]
-    pub format: OutputFormat,
+    #[arg(long)]
+    pub format: Option<OutputFormat>,
 
     /// Output file (stdout if omitted)
     #[arg(long)]
@@ -54,14 +54,14 @@ pub struct CompareArgs {
 
     /// Output format
     #[arg(long, default_value = "json")]
-    pub format: OutputFormat,
+    pub format: CompareOutputFormat,
 
     /// Output file (stdout if omitted)
     #[arg(long)]
     pub output: Option<PathBuf>,
 }
 
-#[derive(Clone, ValueEnum)]
+#[derive(Clone, Copy, ValueEnum)]
 pub enum AnalyzeView {
     /// Full analysis (JSON or Markdown)
     All,
@@ -71,9 +71,33 @@ pub enum AnalyzeView {
     Activity,
 }
 
-#[derive(Clone, ValueEnum)]
+#[derive(Clone, Copy, ValueEnum)]
 pub enum OutputFormat {
     Json,
     Md,
     Table,
+}
+
+impl OutputFormat {
+    pub fn default_for_view(view: &AnalyzeView) -> Self {
+        match view {
+            AnalyzeView::All => Self::Json,
+            AnalyzeView::UsersContribution | AnalyzeView::Activity => Self::Table,
+        }
+    }
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+pub enum CompareOutputFormat {
+    Json,
+    Md,
+}
+
+impl From<CompareOutputFormat> for OutputFormat {
+    fn from(value: CompareOutputFormat) -> Self {
+        match value {
+            CompareOutputFormat::Json => Self::Json,
+            CompareOutputFormat::Md => Self::Md,
+        }
+    }
 }

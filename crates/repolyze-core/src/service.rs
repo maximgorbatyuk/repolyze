@@ -13,6 +13,7 @@ pub struct RepositoryCacheMetadata {
     pub history_scope: String,
     pub head_commit_hash: String,
     pub branch_name: Option<String>,
+    pub cacheable: bool,
 }
 
 pub trait AnalysisStore {
@@ -25,10 +26,14 @@ pub trait AnalysisStore {
         key: &RepositoryCacheMetadata,
         analysis: &RepositoryAnalysis,
     ) -> Result<(), RepolyzeError>;
-    fn record_scan_failure(
+    fn record_scan_result(
         &self,
+        key: Option<&RepositoryCacheMetadata>,
         repository_root: &std::path::Path,
-        reason: &str,
+        trigger_source: &str,
+        cache_status: &str,
+        status: &str,
+        failure_reason: Option<&str>,
     ) -> Result<(), RepolyzeError>;
 }
 
@@ -73,15 +78,47 @@ pub fn analyze_targets_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: Analysi
     git: &G,
     metrics: &M,
     store: &S,
+    trigger_source: &str,
 ) -> ComparisonReport {
     let mut results = Vec::new();
     let mut failures = Vec::new();
 
     for target in targets {
-        match analyze_target_with_store(target, git, metrics, store) {
+        let cache_key = match git.cache_metadata(target) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                let _ = store.record_scan_result(
+                    None,
+                    &target.root,
+                    trigger_source,
+                    "miss",
+                    "failed",
+                    Some(&error.to_string()),
+                );
+                failures.push(PartialFailure {
+                    path: target.root.clone(),
+                    reason: error.to_string(),
+                });
+                continue;
+            }
+        };
+
+        match analyze_target_with_store(target, &cache_key, git, metrics, store, trigger_source) {
             Ok(analysis) => results.push(analysis),
             Err(error) => {
-                let _ = store.record_scan_failure(&target.root, &error.to_string());
+                let cache_status = if cache_key.cacheable {
+                    "miss"
+                } else {
+                    "bypass"
+                };
+                let _ = store.record_scan_result(
+                    Some(&cache_key),
+                    &target.root,
+                    trigger_source,
+                    cache_status,
+                    "failed",
+                    Some(&error.to_string()),
+                );
                 failures.push(PartialFailure {
                     path: target.root.clone(),
                     reason: error.to_string(),
@@ -95,18 +132,49 @@ pub fn analyze_targets_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: Analysi
 
 fn analyze_target_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: AnalysisStore>(
     target: &RepositoryTarget,
+    cache_key: &RepositoryCacheMetadata,
     git: &G,
     metrics: &M,
     store: &S,
+    trigger_source: &str,
 ) -> Result<RepositoryAnalysis, RepolyzeError> {
-    let cache_key = git.cache_metadata(target)?;
-
-    if let Some(cached) = store.load_snapshot(&cache_key)? {
+    if cache_key.cacheable
+        && let Some(cached) = store.load_snapshot(cache_key)?
+    {
+        let _ = store.record_scan_result(
+            Some(cache_key),
+            &target.root,
+            trigger_source,
+            "hit",
+            "success",
+            None,
+        );
         return Ok(cached);
     }
 
     let analysis = analyze_target(target, git, metrics)?;
-    let _ = store.save_snapshot(&cache_key, &analysis);
+
+    if cache_key.cacheable {
+        let _ = store.save_snapshot(cache_key, &analysis);
+        let _ = store.record_scan_result(
+            Some(cache_key),
+            &target.root,
+            trigger_source,
+            "miss",
+            "success",
+            None,
+        );
+    } else {
+        let _ = store.record_scan_result(
+            Some(cache_key),
+            &target.root,
+            trigger_source,
+            "bypass",
+            "success",
+            None,
+        );
+    }
+
     Ok(analysis)
 }
 
@@ -134,12 +202,14 @@ mod tests {
 
     struct FakeAnalysisStore {
         cached: RefCell<Option<RepositoryAnalysis>>,
+        scan_events: RefCell<Vec<(String, String)>>,
     }
 
     impl FakeAnalysisStore {
         fn with_hit(analysis: RepositoryAnalysis) -> Self {
             Self {
                 cached: RefCell::new(Some(analysis)),
+                scan_events: RefCell::new(Vec::new()),
             }
         }
     }
@@ -158,11 +228,18 @@ mod tests {
         ) -> Result<(), RepolyzeError> {
             Ok(())
         }
-        fn record_scan_failure(
+        fn record_scan_result(
             &self,
+            _key: Option<&RepositoryCacheMetadata>,
             _repository_root: &std::path::Path,
-            _reason: &str,
+            _trigger_source: &str,
+            cache_status: &str,
+            status: &str,
+            _failure_reason: Option<&str>,
         ) -> Result<(), RepolyzeError> {
+            self.scan_events
+                .borrow_mut()
+                .push((cache_status.to_string(), status.to_string()));
             Ok(())
         }
     }
@@ -179,6 +256,7 @@ mod tests {
                 history_scope: "head".to_string(),
                 head_commit_hash: "abc123".to_string(),
                 branch_name: Some("main".to_string()),
+                cacheable: true,
             })
         }
         fn analyze_git(
@@ -232,12 +310,16 @@ mod tests {
         let metrics = PanicMetricsAnalyzer;
         let store = FakeAnalysisStore::with_hit(cached.clone());
 
-        let result = analyze_targets_with_store(&[target], &git, &metrics, &store);
+        let result = analyze_targets_with_store(&[target], &git, &metrics, &store, "cli");
 
         assert_eq!(result.repositories.len(), 1);
         assert_eq!(
             result.repositories[0].repository.root,
             cached.repository.root
+        );
+        assert_eq!(
+            store.scan_events.borrow().as_slice(),
+            &[("hit".to_string(), "success".to_string())]
         );
     }
 }

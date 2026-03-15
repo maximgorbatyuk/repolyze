@@ -48,6 +48,16 @@ pub fn run() -> anyhow::Result<()> {
 }
 
 pub fn execute_pending_action(app: &mut AppState) -> anyhow::Result<()> {
+    execute_pending_action_with_store_opener(app, open_store)
+}
+
+fn execute_pending_action_with_store_opener<F>(
+    app: &mut AppState,
+    open_store_fn: F,
+) -> anyhow::Result<()>
+where
+    F: FnOnce() -> anyhow::Result<repolyze_store::sqlite::SqliteStore>,
+{
     let Some(action) = app.take_action() else {
         return Ok(());
     };
@@ -57,8 +67,17 @@ pub fn execute_pending_action(app: &mut AppState) -> anyhow::Result<()> {
             let (targets, input_failures) = resolve_inputs_with_failures(&paths);
             let git = GitCliBackend;
             let metrics = FilesystemMetricsBackend;
-            let store = open_store()?;
-            let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store);
+            let store = match open_store_fn() {
+                Ok(store) => store,
+                Err(error) => {
+                    app.status_message =
+                        format!("Analysis failed: failed to open database: {error}");
+                    app.analysis_result = None;
+                    app.analysis_table = None;
+                    return Ok(());
+                }
+            };
+            let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store, "tui");
             let current_failure_count = input_failures.len() + report.failures.len();
 
             if !input_failures.is_empty() {
@@ -92,8 +111,17 @@ pub fn execute_pending_action(app: &mut AppState) -> anyhow::Result<()> {
             let (targets, input_failures) = resolve_inputs_with_failures(&paths);
             let git = GitCliBackend;
             let metrics = FilesystemMetricsBackend;
-            let store = open_store()?;
-            let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store);
+            let store = match open_store_fn() {
+                Ok(store) => store,
+                Err(error) => {
+                    app.status_message =
+                        format!("Compare failed: failed to open database: {error}");
+                    app.analysis_result = None;
+                    app.analysis_table = None;
+                    return Ok(());
+                }
+            };
+            let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store, "tui");
             let current_failure_count = input_failures.len() + report.failures.len();
 
             if !input_failures.is_empty() {
@@ -128,6 +156,8 @@ fn open_store() -> anyhow::Result<repolyze_store::sqlite::SqliteStore> {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::anyhow;
+    use std::path::PathBuf;
     use std::process::Command;
 
     use super::*;
@@ -184,5 +214,20 @@ mod tests {
         let report = app.analysis_result.as_ref().unwrap();
         assert_eq!(report.repositories.len(), 1);
         assert_eq!(report.summary.total_commits, 1);
+    }
+
+    #[test]
+    fn execute_pending_action_handles_store_open_failure() {
+        let mut app = AppState::new();
+        app.pending_action = Some(AppAction::StartAnalyze {
+            paths: vec![PathBuf::from("/tmp/repo")],
+            view: AnalyzeView::All,
+        });
+
+        let result = execute_pending_action_with_store_opener(&mut app, || Err(anyhow!("boom")));
+
+        assert!(result.is_ok());
+        assert!(app.status_message.contains("failed to open database"));
+        assert!(app.pending_action.is_none());
     }
 }

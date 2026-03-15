@@ -24,6 +24,7 @@ pub struct RepositoryAnalysis {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContributionSummary {
     pub contributors: Vec<ContributorStats>,
+    #[serde(default)]
     pub activity_by_contributor: Vec<ContributorActivityStats>,
     pub total_commits: u64,
 }

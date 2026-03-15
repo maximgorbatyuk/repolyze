@@ -21,3 +21,8 @@ pub fn current_head_metadata(repo: &Path) -> Result<HeadMetadata, RepolyzeError>
         branch_name,
     })
 }
+
+pub fn is_worktree_clean(repo: &Path) -> Result<bool, RepolyzeError> {
+    let status = run_git(repo, &["status", "--porcelain", "--untracked-files=all"])?;
+    Ok(status.trim().is_empty())
+}

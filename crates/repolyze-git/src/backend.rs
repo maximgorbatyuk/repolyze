@@ -13,6 +13,7 @@ impl GitAnalyzer for GitCliBackend {
         target: &RepositoryTarget,
     ) -> Result<RepositoryCacheMetadata, RepolyzeError> {
         let meta = crate::repository::current_head_metadata(&target.root)?;
+        let worktree_is_clean = crate::repository::is_worktree_clean(&target.root)?;
         Ok(RepositoryCacheMetadata {
             repository_root: target.root.clone(),
             history_scope: "head".to_string(),
@@ -22,6 +23,7 @@ impl GitAnalyzer for GitCliBackend {
             } else {
                 Some(meta.branch_name)
             },
+            cacheable: worktree_is_clean,
         })
     }
 

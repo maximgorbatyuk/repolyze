@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::error::RepolyzeError;
@@ -77,40 +78,46 @@ fn dedup_targets(targets: Vec<RepositoryTarget>) -> Vec<RepositoryTarget> {
     deduped
 }
 
-const MAX_DISCOVERY_DEPTH: usize = 10;
-
 /// Recursively scan a directory for Git repositories.
 /// Stops descending into a directory once a `.git` marker is found there.
-/// Limits recursion depth to avoid symlink cycles and extremely deep trees.
 fn discover_git_roots(dir: &Path) -> Vec<PathBuf> {
     let mut roots = Vec::new();
-    discover_git_roots_recursive(dir, &mut roots, 0);
+    let mut visited = HashSet::new();
+    discover_git_roots_recursive(dir, &mut roots, &mut visited);
     roots
 }
 
-fn discover_git_roots_recursive(dir: &Path, roots: &mut Vec<PathBuf>, depth: usize) {
-    if depth > MAX_DISCOVERY_DEPTH {
+fn discover_git_roots_recursive(
+    dir: &Path,
+    roots: &mut Vec<PathBuf>,
+    visited: &mut HashSet<PathBuf>,
+) {
+    let canonical = match dir.canonicalize() {
+        Ok(path) => path,
+        Err(_) => return,
+    };
+
+    if !visited.insert(canonical.clone()) {
         return;
     }
 
     // .git can be a directory (normal repo) or a file (worktree/submodule)
-    if dir.join(".git").exists() {
-        if let Ok(canonical) = dir.canonicalize() {
-            roots.push(canonical);
-        }
+    if canonical.join(".git").exists() {
+        roots.push(canonical);
         // Don't descend further — this is a repo root
         return;
     }
 
-    let entries = match std::fs::read_dir(dir) {
+    let entries = match std::fs::read_dir(&canonical) {
         Ok(entries) => entries,
         Err(_) => return,
     };
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() {
-            discover_git_roots_recursive(&path, roots, depth + 1);
+        let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+        if is_dir {
+            discover_git_roots_recursive(&path, roots, visited);
         }
     }
 }
@@ -282,5 +289,34 @@ mod tests {
         assert!(targets.is_empty());
         assert_eq!(failures.len(), 1);
         assert!(failures[0].reason.contains("no git repositories found"));
+    }
+
+    #[test]
+    fn resolve_inputs_with_failures_discovers_deeply_nested_repositories() {
+        let root = tempfile::tempdir().unwrap();
+        let mut nested = root.path().join("workspace");
+        for segment in [
+            "a",
+            "b",
+            "c",
+            "d",
+            "e",
+            "f",
+            "g",
+            "h",
+            "i",
+            "j",
+            "k",
+            "repo-deep",
+        ] {
+            nested = nested.join(segment);
+        }
+        let deep_repo = create_temp_git_repo_at(nested);
+
+        let (targets, failures) = resolve_inputs_with_failures(&[root.path().join("workspace")]);
+
+        assert!(failures.is_empty());
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].root, deep_repo);
     }
 }

@@ -49,7 +49,10 @@ pub fn build_users_contribution_rows(repos: &[RepositoryAnalysis]) -> Vec<UsersC
 
 pub fn build_user_activity_rows(repos: &[RepositoryAnalysis]) -> Vec<UserActivityRow> {
     let merged = merge_activity_by_email(repos);
-    let mut rows: Vec<UserActivityRow> = merged
+    let mut merged: Vec<_> = merged.into_iter().collect();
+    merged.sort_by(|a, b| b.1.commits.cmp(&a.1.commits).then(a.0.cmp(&b.0)));
+
+    merged
         .into_iter()
         .map(|(email, m)| {
             let most_active_weekday_idx = most_active_index(&m.weekday_commits);
@@ -98,14 +101,7 @@ pub fn build_user_activity_rows(repos: &[RepositoryAnalysis]) -> Vec<UserActivit
                 average_commits_per_hour,
             }
         })
-        .collect();
-    rows.sort_by(|a, b| {
-        b.average_commits_per_day
-            .partial_cmp(&a.average_commits_per_day)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then(a.email.cmp(&b.email))
-    });
-    rows
+        .collect()
 }
 
 struct MergedContributor {
@@ -327,5 +323,47 @@ mod tests {
         // 3 distinct dates, 5 commits
         let expected_avg = 5.0 / 3.0;
         assert!((rows[0].average_commits_per_day - expected_avg).abs() < 0.01);
+    }
+
+    #[test]
+    fn build_user_activity_rows_sorts_by_total_commits_descending() {
+        let mut weekday_a = [0u32; 7];
+        weekday_a[0] = 10;
+        let mut hour_a = [0u32; 24];
+        hour_a[10] = 10;
+
+        let mut weekday_b = [0u32; 7];
+        weekday_b[0] = 5;
+        let mut hour_b = [0u32; 24];
+        hour_b[10] = 5;
+
+        let repos = vec![make_repo(
+            "repo-a",
+            vec![
+                make_contributor("big@example.com", 10, 10, 0, 1),
+                make_contributor("focused@example.com", 5, 5, 0, 1),
+            ],
+            vec![
+                make_activity(
+                    "big@example.com",
+                    weekday_a,
+                    hour_a,
+                    &[
+                        "2025-01-13",
+                        "2025-01-14",
+                        "2025-01-15",
+                        "2025-01-16",
+                        "2025-01-17",
+                    ],
+                ),
+                make_activity("focused@example.com", weekday_b, hour_b, &["2025-01-13"]),
+            ],
+            15,
+        )];
+
+        let rows = build_user_activity_rows(&repos);
+
+        assert_eq!(rows[0].email, "big@example.com");
+        assert_eq!(rows[1].email, "focused@example.com");
     }
 }

@@ -24,7 +24,7 @@ pub fn run_analyze(
     let git = GitCliBackend;
     let metrics = FilesystemMetricsBackend;
     let store = open_store()?;
-    let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store);
+    let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store, "cli");
 
     if !input_failures.is_empty() {
         let mut failures = input_failures;

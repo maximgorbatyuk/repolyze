@@ -176,11 +176,18 @@ impl AppState {
         }
     }
 
-    /// Select an analyze submenu item and advance to path entry.
+    /// Select an analyze submenu item and immediately run analysis on the current directory.
     pub fn select_analyze_view(&mut self) {
         if let Some((_, view)) = ANALYZE_MENU_ITEMS.get(self.analyze_menu_selected) {
             self.selected_analyze_view = view.clone();
+            self.analysis_result = None;
+            self.analysis_table = None;
+            self.input_paths.clear();
+            self.input_buffer.clear();
+            // Use current directory (`.`) — the -D flag already sets cwd before TUI starts
+            self.input_paths.push(PathBuf::from("."));
             self.active_screen = Screen::Analyze;
+            self.dispatch_analyze();
         }
     }
 
@@ -407,24 +414,48 @@ mod tests {
     }
 
     #[test]
-    fn analyze_users_contribution_dispatches_specialized_action() {
+    fn analyze_users_contribution_dispatches_immediately() {
         let mut app = AppState::new();
         app.active_screen = Screen::AnalyzeMenu;
         app.analyze_menu_selected = 1; // Users contribution
         app.select_analyze_view();
+
         assert_eq!(app.active_screen, Screen::Analyze);
         assert_eq!(app.selected_analyze_view, AnalyzeView::UsersContribution);
-
-        app.input_paths.push(PathBuf::from("/tmp/repo"));
-        app.dispatch_analyze();
-
         assert_eq!(
             app.pending_action,
             Some(AppAction::StartAnalyze {
-                paths: vec![PathBuf::from("/tmp/repo")],
+                paths: vec![PathBuf::from(".")],
                 view: AnalyzeView::UsersContribution,
             })
         );
+    }
+
+    #[test]
+    fn select_analyze_view_clears_stale_analysis_state() {
+        let mut app = AppState::new();
+        app.analysis_result = Some(ComparisonReport {
+            repositories: vec![],
+            summary: repolyze_core::model::ComparisonSummary {
+                total_contributors: 0,
+                total_commits: 0,
+                total_lines_changed: 0,
+                total_files: 0,
+            },
+            failures: vec![],
+        });
+        app.analysis_table = Some("stale".to_string());
+        app.input_buffer = "old".to_string();
+        app.input_paths.push(PathBuf::from("/tmp/old"));
+        app.analyze_menu_selected = 2;
+
+        app.select_analyze_view();
+
+        assert_eq!(app.active_screen, Screen::Analyze);
+        assert!(app.analysis_result.is_none());
+        assert!(app.input_buffer.is_empty());
+        // Dispatches immediately with "." as path
+        assert!(app.pending_action.is_some());
     }
 
     #[test]

@@ -134,3 +134,18 @@ fn compare_reports_invalid_repo_as_failure() {
             .contains("path does not exist")
     );
 }
+
+#[test]
+fn compare_help_does_not_advertise_table_format() {
+    let output = Command::cargo_bin("repolyze")
+        .unwrap()
+        .args(["compare", "--help"])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("json"));
+    assert!(stdout.contains("md"));
+    assert!(!stdout.contains("table"));
+}
