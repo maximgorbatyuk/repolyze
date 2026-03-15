@@ -87,3 +87,23 @@ impl CommitFileChangeRecord {
         }
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct UsersContributionRowRecord {
+    pub email: String,
+    pub commits: i64,
+    pub lines_modified: i64,
+    pub lines_per_commit: f64,
+    pub files_touched: i64,
+    pub most_active_week_day: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct UserActivityRowRecord {
+    pub email: String,
+    pub most_active_week_day: String,
+    pub average_commits_per_day_in_most_active_day: f64,
+    pub average_commits_per_day: f64,
+    pub average_commits_per_hour_in_most_active_hour: f64,
+    pub average_commits_per_hour: f64,
+}

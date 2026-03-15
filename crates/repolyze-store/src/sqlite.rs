@@ -257,6 +257,280 @@ impl SqliteStore {
         )?;
         Ok(count)
     }
+
+    pub fn users_contribution_rows_for_snapshots(
+        &self,
+        snapshot_ids: &[i64],
+    ) -> Result<Vec<crate::models::UsersContributionRowRecord>, StoreError> {
+        let placeholders = snapshot_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT c.canonical_email, s.commits_count, s.lines_modified, s.files_touched_count, s.most_active_weekday
+             FROM snapshot_contributor_summaries s
+             JOIN contributors c ON c.id = s.contributor_id
+             WHERE s.snapshot_id IN ({placeholders})
+             ORDER BY s.commits_count DESC, c.canonical_email ASC"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([], |row| {
+            let email: String = row.get(0)?;
+            let commits: i64 = row.get(1)?;
+            let lines_modified: i64 = row.get(2)?;
+            let files_touched: i64 = row.get(3)?;
+            let most_active_weekday: Option<i64> = row.get(4)?;
+            let lines_per_commit = if commits > 0 {
+                lines_modified as f64 / commits as f64
+            } else {
+                0.0
+            };
+            let weekday_name = most_active_weekday
+                .map(weekday_name_from_number)
+                .unwrap_or_else(|| "N/A".to_string());
+            Ok(crate::models::UsersContributionRowRecord {
+                email,
+                commits,
+                lines_modified,
+                lines_per_commit,
+                files_touched,
+                most_active_week_day: weekday_name,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn user_activity_rows_for_snapshots(
+        &self,
+        snapshot_ids: &[i64],
+    ) -> Result<Vec<crate::models::UserActivityRowRecord>, StoreError> {
+        let placeholders = snapshot_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+
+        // Get summary + weekday/hour stats per contributor
+        let sql = format!(
+            "SELECT c.canonical_email, s.commits_count, s.active_days_count, s.most_active_weekday, s.most_active_hour
+             FROM snapshot_contributor_summaries s
+             JOIN contributors c ON c.id = s.contributor_id
+             WHERE s.snapshot_id IN ({placeholders})
+             ORDER BY s.commits_count DESC, c.canonical_email ASC"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([], |row| {
+            let email: String = row.get(0)?;
+            let commits_count: i64 = row.get(1)?;
+            let active_days_count: i64 = row.get(2)?;
+            let most_active_weekday: Option<i64> = row.get(3)?;
+            let most_active_hour: Option<i64> = row.get(4)?;
+            Ok((
+                email,
+                commits_count,
+                active_days_count,
+                most_active_weekday,
+                most_active_hour,
+            ))
+        })?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            let (email, commits_count, active_days_count, most_active_weekday, most_active_hour) =
+                row?;
+
+            let weekday_name = most_active_weekday
+                .map(weekday_name_from_number)
+                .unwrap_or_else(|| "N/A".to_string());
+
+            // Get most active weekday commits
+            let most_active_weekday_commits = if let Some(wd) = most_active_weekday {
+                self.weekday_commits_for_contributor(&email, snapshot_ids, wd)?
+            } else {
+                0
+            };
+            let most_active_weekday_dates = if let Some(wd) = most_active_weekday {
+                self.weekday_dates_for_contributor(&email, snapshot_ids, wd)?
+            } else {
+                0
+            };
+
+            // Get most active hour commits
+            let most_active_hour_commits = if let Some(h) = most_active_hour {
+                self.hour_commits_for_contributor(&email, snapshot_ids, h)?
+            } else {
+                0
+            };
+            let most_active_hour_buckets = if let Some(h) = most_active_hour {
+                self.hour_buckets_for_contributor(&email, snapshot_ids, h)?
+            } else {
+                0
+            };
+
+            // Total hour stats for average
+            let total_hour_buckets: i64 =
+                self.total_hour_buckets_for_contributor(&email, snapshot_ids)?;
+
+            let average_commits_per_day = if active_days_count > 0 {
+                commits_count as f64 / active_days_count as f64
+            } else {
+                0.0
+            };
+
+            let average_commits_per_day_in_most_active_day = if most_active_weekday_dates > 0 {
+                most_active_weekday_commits as f64 / most_active_weekday_dates as f64
+            } else {
+                0.0
+            };
+
+            let average_commits_per_hour = if total_hour_buckets > 0 {
+                commits_count as f64 / total_hour_buckets as f64
+            } else {
+                0.0
+            };
+
+            let average_commits_per_hour_in_most_active_hour = if most_active_hour_buckets > 0 {
+                most_active_hour_commits as f64 / most_active_hour_buckets as f64
+            } else {
+                0.0
+            };
+
+            result.push(crate::models::UserActivityRowRecord {
+                email,
+                most_active_week_day: weekday_name,
+                average_commits_per_day_in_most_active_day,
+                average_commits_per_day,
+                average_commits_per_hour_in_most_active_hour,
+                average_commits_per_hour,
+            });
+        }
+
+        Ok(result)
+    }
+
+    fn weekday_commits_for_contributor(
+        &self,
+        email: &str,
+        snapshot_ids: &[i64],
+        weekday: i64,
+    ) -> Result<i64, StoreError> {
+        let placeholders = snapshot_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT COALESCE(SUM(w.commits_count), 0)
+             FROM snapshot_contributor_weekday_stats w
+             JOIN contributors c ON c.id = w.contributor_id
+             WHERE w.snapshot_id IN ({placeholders})
+               AND c.canonical_email = ?1
+               AND w.weekday = ?2"
+        );
+        let count = self
+            .conn
+            .query_row(&sql, params![email, weekday], |row| row.get(0))?;
+        Ok(count)
+    }
+
+    fn weekday_dates_for_contributor(
+        &self,
+        email: &str,
+        snapshot_ids: &[i64],
+        weekday: i64,
+    ) -> Result<i64, StoreError> {
+        let placeholders = snapshot_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT COALESCE(SUM(w.active_dates_count), 0)
+             FROM snapshot_contributor_weekday_stats w
+             JOIN contributors c ON c.id = w.contributor_id
+             WHERE w.snapshot_id IN ({placeholders})
+               AND c.canonical_email = ?1
+               AND w.weekday = ?2"
+        );
+        let count = self
+            .conn
+            .query_row(&sql, params![email, weekday], |row| row.get(0))?;
+        Ok(count)
+    }
+
+    fn hour_commits_for_contributor(
+        &self,
+        email: &str,
+        snapshot_ids: &[i64],
+        hour: i64,
+    ) -> Result<i64, StoreError> {
+        let placeholders = snapshot_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT COALESCE(SUM(h.commits_count), 0)
+             FROM snapshot_contributor_hour_stats h
+             JOIN contributors c ON c.id = h.contributor_id
+             WHERE h.snapshot_id IN ({placeholders})
+               AND c.canonical_email = ?1
+               AND h.hour_of_day = ?2"
+        );
+        let count = self
+            .conn
+            .query_row(&sql, params![email, hour], |row| row.get(0))?;
+        Ok(count)
+    }
+
+    fn hour_buckets_for_contributor(
+        &self,
+        email: &str,
+        snapshot_ids: &[i64],
+        hour: i64,
+    ) -> Result<i64, StoreError> {
+        let placeholders = snapshot_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT COALESCE(SUM(h.active_hour_buckets_count), 0)
+             FROM snapshot_contributor_hour_stats h
+             JOIN contributors c ON c.id = h.contributor_id
+             WHERE h.snapshot_id IN ({placeholders})
+               AND c.canonical_email = ?1
+               AND h.hour_of_day = ?2"
+        );
+        let count = self
+            .conn
+            .query_row(&sql, params![email, hour], |row| row.get(0))?;
+        Ok(count)
+    }
+
+    fn total_hour_buckets_for_contributor(
+        &self,
+        email: &str,
+        snapshot_ids: &[i64],
+    ) -> Result<i64, StoreError> {
+        let placeholders = snapshot_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT COALESCE(SUM(h.active_hour_buckets_count), 0)
+             FROM snapshot_contributor_hour_stats h
+             JOIN contributors c ON c.id = h.contributor_id
+             WHERE h.snapshot_id IN ({placeholders})
+               AND c.canonical_email = ?1"
+        );
+        let count = self
+            .conn
+            .query_row(&sql, params![email], |row| row.get(0))?;
+        Ok(count)
+    }
 }
 
 impl repolyze_core::service::AnalysisStore for SqliteStore {
@@ -376,4 +650,18 @@ fn now_iso() -> String {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default();
     format!("{}", duration.as_secs())
+}
+
+fn weekday_name_from_number(weekday: i64) -> String {
+    match weekday {
+        0 => "Sunday",
+        1 => "Monday",
+        2 => "Tuesday",
+        3 => "Wednesday",
+        4 => "Thursday",
+        5 => "Friday",
+        6 => "Saturday",
+        _ => "Unknown",
+    }
+    .to_string()
 }
