@@ -40,6 +40,52 @@ impl SqliteStore {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    pub fn database_metadata(&self) -> Result<crate::models::DatabaseMetadata, StoreError> {
+        let tables = self.table_names()?;
+        let mut counts: Vec<(String, i64)> = Vec::new();
+        let mut total: i64 = 0;
+
+        for t in &tables {
+            if t.starts_with("sqlite_") {
+                continue;
+            }
+            let count: i64 =
+                self.conn
+                    .query_row(&format!("SELECT COUNT(*) FROM \"{t}\""), [], |row| {
+                        row.get(0)
+                    })?;
+            total += count;
+            counts.push((t.clone(), count));
+        }
+
+        let mut rows: Vec<crate::models::TableRowCount> = counts
+            .into_iter()
+            .map(|(name, count)| {
+                let percentage = if total > 0 {
+                    (count as f64 / total as f64) * 100.0
+                } else {
+                    0.0
+                };
+                crate::models::TableRowCount {
+                    table_name: name,
+                    record_count: count,
+                    percentage,
+                }
+            })
+            .collect();
+
+        rows.sort_by(|a, b| {
+            b.record_count
+                .cmp(&a.record_count)
+                .then(a.table_name.cmp(&b.table_name))
+        });
+
+        Ok(crate::models::DatabaseMetadata {
+            tables: rows,
+            total_rows: total,
+        })
+    }
+
     pub fn upsert_repository(
         &self,
         canonical_path: &str,

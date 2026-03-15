@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 use repolyze_core::model::{ComparisonReport, PartialFailure};
 
-/// Active screen in the TUI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
     Home,
@@ -11,10 +10,9 @@ pub enum Screen {
     AnalyzeMenu,
     Analyze,
     Compare,
-    Errors,
+    Metadata,
 }
 
-/// Which analytics view the user selected.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AnalyzeView {
     All,
@@ -28,13 +26,12 @@ pub const ANALYZE_MENU_ITEMS: [(&str, AnalyzeView); 3] = [
     ("Most active days and hours", AnalyzeView::Activity),
 ];
 
-/// Menu items shown in the home screen and sidebar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuItem {
     Analyze,
     Compare,
     Help,
-    Errors,
+    Metadata,
 }
 
 impl MenuItem {
@@ -43,7 +40,7 @@ impl MenuItem {
             MenuItem::Analyze => "Analyze one or more repositories",
             MenuItem::Compare => "Compare multiple repositories",
             MenuItem::Help => "Keybindings and usage guide",
-            MenuItem::Errors => "View analysis errors",
+            MenuItem::Metadata => "Database info and table row counts",
         }
     }
 
@@ -52,7 +49,7 @@ impl MenuItem {
             MenuItem::Analyze => Screen::AnalyzeMenu,
             MenuItem::Compare => Screen::Compare,
             MenuItem::Help => Screen::Help,
-            MenuItem::Errors => Screen::Errors,
+            MenuItem::Metadata => Screen::Metadata,
         }
     }
 }
@@ -63,12 +60,11 @@ impl fmt::Display for MenuItem {
             MenuItem::Analyze => write!(f, "Analyze"),
             MenuItem::Compare => write!(f, "Compare"),
             MenuItem::Help => write!(f, "Help"),
-            MenuItem::Errors => write!(f, "Errors"),
+            MenuItem::Metadata => write!(f, "Metadata"),
         }
     }
 }
 
-/// Actions that originate from user interaction but execute outside the TUI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppAction {
     StartAnalyze {
@@ -76,34 +72,25 @@ pub enum AppAction {
         view: AnalyzeView,
     },
     StartCompare(Vec<PathBuf>),
-    ShowErrors,
+    LoadMetadata,
 }
 
-/// Full TUI application state.
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub menu_items: Vec<MenuItem>,
     pub selected: usize,
     pub active_screen: Screen,
     pub should_quit: bool,
-    /// Result from the most recent analysis run, if any.
     pub analysis_result: Option<ComparisonReport>,
-    /// Accumulated errors from partial failures.
     pub errors: Vec<PartialFailure>,
-    /// Pending action dispatched by the user.
     pub pending_action: Option<AppAction>,
-    /// Path input buffer for analyze/compare screens.
     pub input_buffer: String,
-    /// Paths already added for the current operation.
     pub input_paths: Vec<PathBuf>,
-    /// Status message shown in the bottom bar.
     pub status_message: String,
-    /// Selected index in the analyze submenu.
     pub analyze_menu_selected: usize,
-    /// Selected analyze view.
     pub selected_analyze_view: AnalyzeView,
-    /// ASCII table output for analytics views.
     pub analysis_table: Option<String>,
+    pub metadata_text: Option<String>,
 }
 
 impl Default for AppState {
@@ -119,7 +106,7 @@ impl AppState {
                 MenuItem::Analyze,
                 MenuItem::Compare,
                 MenuItem::Help,
-                MenuItem::Errors,
+                MenuItem::Metadata,
             ],
             selected: 0,
             active_screen: Screen::Home,
@@ -133,6 +120,7 @@ impl AppState {
             analyze_menu_selected: 0,
             selected_analyze_view: AnalyzeView::All,
             analysis_table: None,
+            metadata_text: None,
         }
     }
 
@@ -148,14 +136,16 @@ impl AppState {
         }
     }
 
-    /// Activate the currently selected menu item, switching screens.
     pub fn activate_selected(&mut self) {
         if let Some(item) = self.menu_items.get(self.selected) {
-            self.active_screen = item.screen();
+            let screen = item.screen();
+            if screen == Screen::Metadata {
+                self.pending_action = Some(AppAction::LoadMetadata);
+            }
+            self.active_screen = screen;
         }
     }
 
-    /// Return to the home screen.
     pub fn go_home(&mut self) {
         self.active_screen = Screen::Home;
     }
@@ -164,10 +154,8 @@ impl AppState {
         self.should_quit = true;
     }
 
-    /// Dispatch an analyze action with the current input paths.
     pub fn dispatch_analyze(&mut self) {
         if !self.input_paths.is_empty() {
-            // Clear stale table from previous analysis
             self.analysis_table = None;
             self.pending_action = Some(AppAction::StartAnalyze {
                 paths: self.input_paths.clone(),
@@ -176,7 +164,6 @@ impl AppState {
         }
     }
 
-    /// Select an analyze submenu item and immediately run analysis on the current directory.
     pub fn select_analyze_view(&mut self) {
         if let Some((_, view)) = ANALYZE_MENU_ITEMS.get(self.analyze_menu_selected) {
             self.selected_analyze_view = view.clone();
@@ -184,7 +171,6 @@ impl AppState {
             self.analysis_table = None;
             self.input_paths.clear();
             self.input_buffer.clear();
-            // Use current directory (`.`) — the -D flag already sets cwd before TUI starts
             self.input_paths.push(PathBuf::from("."));
             self.active_screen = Screen::Analyze;
             self.dispatch_analyze();
@@ -203,21 +189,17 @@ impl AppState {
         }
     }
 
-    /// Dispatch a compare action with the current input paths.
     pub fn dispatch_compare(&mut self) {
         if self.input_paths.len() >= 2 {
             self.pending_action = Some(AppAction::StartCompare(self.input_paths.clone()));
         }
     }
 
-    /// Take the pending action, clearing it.
     pub fn take_action(&mut self) -> Option<AppAction> {
         self.pending_action.take()
     }
 
-    /// Set analysis result and clear input state.
     pub fn set_result(&mut self, report: ComparisonReport) {
-        // Clear errors from previous runs before adding new ones
         self.errors.clear();
         self.errors.extend(report.failures.iter().cloned());
         self.analysis_result = Some(report);
@@ -226,7 +208,6 @@ impl AppState {
         self.status_message = "Analysis complete".to_string();
     }
 
-    /// Add a path from the input buffer.
     pub fn add_input_path(&mut self) {
         let path = self.input_buffer.trim().to_string();
         if !path.is_empty() {
@@ -256,7 +237,7 @@ mod tests {
                 MenuItem::Analyze,
                 MenuItem::Compare,
                 MenuItem::Help,
-                MenuItem::Errors,
+                MenuItem::Metadata,
             ]
         );
     }
@@ -264,7 +245,6 @@ mod tests {
     #[test]
     fn navigate_down_and_activate_analyze() {
         let mut app = AppState::new();
-        // selected = 0 is Analyze → opens AnalyzeMenu
         app.activate_selected();
         assert_eq!(app.active_screen, Screen::AnalyzeMenu);
     }
@@ -272,9 +252,8 @@ mod tests {
     #[test]
     fn navigate_to_compare() {
         let mut app = AppState::new();
-        app.move_down(); // Compare
+        app.move_down();
         assert_eq!(app.selected, 1);
-
         app.activate_selected();
         assert_eq!(app.active_screen, Screen::Compare);
     }
@@ -282,24 +261,23 @@ mod tests {
     #[test]
     fn navigate_to_help() {
         let mut app = AppState::new();
-        app.move_down(); // Compare
-        app.move_down(); // Help
+        app.move_down();
+        app.move_down();
         assert_eq!(app.selected, 2);
-
         app.activate_selected();
         assert_eq!(app.active_screen, Screen::Help);
     }
 
     #[test]
-    fn navigate_to_errors() {
+    fn navigate_to_metadata() {
         let mut app = AppState::new();
-        app.move_down(); // Compare
-        app.move_down(); // Help
-        app.move_down(); // Errors
+        app.move_down();
+        app.move_down();
+        app.move_down();
         assert_eq!(app.selected, 3);
-
         app.activate_selected();
-        assert_eq!(app.active_screen, Screen::Errors);
+        assert_eq!(app.active_screen, Screen::Metadata);
+        assert_eq!(app.pending_action, Some(AppAction::LoadMetadata));
     }
 
     #[test]
@@ -308,7 +286,7 @@ mod tests {
         for _ in 0..10 {
             app.move_down();
         }
-        assert_eq!(app.selected, 3); // last item index
+        assert_eq!(app.selected, 3);
     }
 
     #[test]
@@ -330,7 +308,6 @@ mod tests {
         let mut app = AppState::new();
         app.activate_selected();
         assert_ne!(app.active_screen, Screen::Home);
-
         app.go_home();
         assert_eq!(app.active_screen, Screen::Home);
     }
@@ -340,7 +317,6 @@ mod tests {
         let mut app = AppState::new();
         app.input_paths.push(PathBuf::from("/tmp/repo"));
         app.dispatch_analyze();
-
         assert_eq!(
             app.pending_action,
             Some(AppAction::StartAnalyze {
@@ -363,7 +339,6 @@ mod tests {
         app.input_paths.push(PathBuf::from("/tmp/a"));
         app.dispatch_compare();
         assert!(app.pending_action.is_none());
-
         app.input_paths.push(PathBuf::from("/tmp/b"));
         app.dispatch_compare();
         assert!(app.pending_action.is_some());
@@ -374,7 +349,6 @@ mod tests {
         let mut app = AppState::new();
         app.input_paths.push(PathBuf::from("/tmp/repo"));
         app.dispatch_analyze();
-
         let action = app.take_action();
         assert!(action.is_some());
         assert!(app.pending_action.is_none());
@@ -385,7 +359,6 @@ mod tests {
         let mut app = AppState::new();
         app.input_buffer = "/tmp/repo".to_string();
         app.add_input_path();
-
         assert_eq!(app.input_paths, vec![PathBuf::from("/tmp/repo")]);
         assert!(app.input_buffer.is_empty());
     }
@@ -403,7 +376,7 @@ mod tests {
         assert_eq!(MenuItem::Help.screen(), Screen::Help);
         assert_eq!(MenuItem::Analyze.screen(), Screen::AnalyzeMenu);
         assert_eq!(MenuItem::Compare.screen(), Screen::Compare);
-        assert_eq!(MenuItem::Errors.screen(), Screen::Errors);
+        assert_eq!(MenuItem::Metadata.screen(), Screen::Metadata);
     }
 
     #[test]
@@ -417,9 +390,8 @@ mod tests {
     fn analyze_users_contribution_dispatches_immediately() {
         let mut app = AppState::new();
         app.active_screen = Screen::AnalyzeMenu;
-        app.analyze_menu_selected = 1; // Users contribution
+        app.analyze_menu_selected = 1;
         app.select_analyze_view();
-
         assert_eq!(app.active_screen, Screen::Analyze);
         assert_eq!(app.selected_analyze_view, AnalyzeView::UsersContribution);
         assert_eq!(
@@ -448,13 +420,10 @@ mod tests {
         app.input_buffer = "old".to_string();
         app.input_paths.push(PathBuf::from("/tmp/old"));
         app.analyze_menu_selected = 2;
-
         app.select_analyze_view();
-
         assert_eq!(app.active_screen, Screen::Analyze);
         assert!(app.analysis_result.is_none());
         assert!(app.input_buffer.is_empty());
-        // Dispatches immediately with "." as path
         assert!(app.pending_action.is_some());
     }
 
@@ -464,7 +433,7 @@ mod tests {
             MenuItem::Analyze,
             MenuItem::Compare,
             MenuItem::Help,
-            MenuItem::Errors,
+            MenuItem::Metadata,
         ] {
             assert!(!item.description().is_empty());
         }

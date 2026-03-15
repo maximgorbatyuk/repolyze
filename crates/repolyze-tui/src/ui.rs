@@ -30,7 +30,7 @@ pub fn draw(frame: &mut Frame, app: &AppState) {
         Screen::AnalyzeMenu => draw_analyze_menu(frame, app, area),
         Screen::Analyze => draw_analyze(frame, app, area),
         Screen::Compare => draw_compare(frame, app, area),
-        Screen::Errors => draw_errors(frame, app, area),
+        Screen::Metadata => draw_metadata(frame, app, area),
     }
 }
 
@@ -327,25 +327,23 @@ fn draw_compare(frame: &mut Frame, app: &AppState, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-fn draw_errors(frame: &mut Frame, app: &AppState, area: Rect) {
+fn draw_metadata(frame: &mut Frame, app: &AppState, area: Rect) {
     let mut lines = vec![
         Line::from(Span::styled(
-            " Errors",
+            " Metadata",
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
     ];
 
-    if app.errors.is_empty() {
-        lines.push(Line::from(" No errors recorded."));
-    } else {
-        lines.push(Line::from(format!(" {} error(s):", app.errors.len())));
-        lines.push(Line::from(""));
-        for error in &app.errors {
-            lines.push(Line::from(Span::styled(
-                format!("   {} \u{2014} {}", error.path.display(), error.reason),
-                Style::default().fg(Color::Red),
-            )));
+    match &app.metadata_text {
+        Some(text) => {
+            for line in text.lines() {
+                lines.push(Line::from(format!(" {line}")));
+            }
+        }
+        None => {
+            lines.push(Line::from(" Loading..."));
         }
     }
 

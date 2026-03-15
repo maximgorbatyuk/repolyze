@@ -98,6 +98,19 @@ pub struct UsersContributionRowRecord {
     pub most_active_week_day: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct TableRowCount {
+    pub table_name: String,
+    pub record_count: i64,
+    pub percentage: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DatabaseMetadata {
+    pub tables: Vec<TableRowCount>,
+    pub total_rows: i64,
+}
+
 #[derive(Debug, Clone)]
 pub struct UserActivityRowRecord {
     pub email: String,

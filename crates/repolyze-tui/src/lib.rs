@@ -19,7 +19,7 @@ use repolyze_report::table::{
     render_analysis_header, render_user_activity_table, render_users_contribution_table,
 };
 
-use app::{AnalyzeView, AppAction, AppState, Screen};
+use app::{AnalyzeView, AppAction, AppState};
 
 pub fn run() -> anyhow::Result<()> {
     enable_raw_mode()?;
@@ -58,7 +58,7 @@ fn execute_pending_action_with_store_opener<F>(
     open_store_fn: F,
 ) -> anyhow::Result<()>
 where
-    F: FnOnce() -> anyhow::Result<repolyze_store::sqlite::SqliteStore>,
+    F: Fn() -> anyhow::Result<repolyze_store::sqlite::SqliteStore>,
 {
     let Some(action) = app.take_action() else {
         return Ok(());
@@ -90,7 +90,6 @@ where
                 report.failures = failures;
             }
 
-            // Build header + table for all views
             let header = render_analysis_header(&report.repositories, elapsed);
             let table_body = match view {
                 AnalyzeView::UsersContribution => {
@@ -143,12 +142,148 @@ where
                     format!("Analysis complete with {current_failure_count} error(s)");
             }
         }
-        AppAction::ShowErrors => {
-            app.active_screen = Screen::Errors;
+        AppAction::LoadMetadata => {
+            app.metadata_text = Some(build_metadata_text(&open_store_fn));
         }
     }
 
     Ok(())
+}
+
+fn build_metadata_text<F>(open_store_fn: &F) -> String
+where
+    F: Fn() -> anyhow::Result<repolyze_store::sqlite::SqliteStore>,
+{
+    let db_path = match repolyze_store::path::resolve_database_path() {
+        Ok(p) => p,
+        Err(e) => return format!("Failed to resolve database path: {e}"),
+    };
+
+    let file_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+
+    let store = match open_store_fn() {
+        Ok(s) => s,
+        Err(e) => {
+            return format!(
+                "Database:  {}\n\nFailed to open database: {e}",
+                db_path.display()
+            );
+        }
+    };
+
+    let meta = match store.database_metadata() {
+        Ok(m) => m,
+        Err(e) => {
+            return format!(
+                "Database:  {}\n\nFailed to query metadata: {e}",
+                db_path.display()
+            );
+        }
+    };
+
+    let mut out = String::new();
+    out.push_str(&format!("Database:  {}\n", db_path.display()));
+    out.push_str(&format!(
+        "Size:      {} ({file_size} bytes)\n\n",
+        format_file_size(file_size)
+    ));
+
+    // Build table
+    let headers = ["table", "records", "percentage"];
+    let right_align = [false, true, true];
+
+    let data: Vec<[String; 3]> = meta
+        .tables
+        .iter()
+        .map(|t| {
+            [
+                t.table_name.clone(),
+                t.record_count.to_string(),
+                format!("{:.1}%", t.percentage),
+            ]
+        })
+        .collect();
+
+    let totals = [
+        "Total".to_string(),
+        meta.total_rows.to_string(),
+        "100.0%".to_string(),
+    ];
+
+    let mut widths: Vec<usize> = headers.iter().map(|h| h.len()).collect();
+    for row in &data {
+        for (i, cell) in row.iter().enumerate() {
+            widths[i] = widths[i].max(cell.len());
+        }
+    }
+    for (i, cell) in totals.iter().enumerate() {
+        widths[i] = widths[i].max(cell.len());
+    }
+
+    // Header
+    for (i, h) in headers.iter().enumerate() {
+        if i > 0 {
+            out.push_str("  ");
+        }
+        out.push_str(&format!("{:<w$}", h, w = widths[i]));
+    }
+    out.push('\n');
+
+    // Separator
+    for (i, w) in widths.iter().enumerate() {
+        if i > 0 {
+            out.push_str("  ");
+        }
+        out.push_str(&"-".repeat(*w));
+    }
+    out.push('\n');
+
+    // Data
+    for row in &data {
+        for (i, cell) in row.iter().enumerate() {
+            if i > 0 {
+                out.push_str("  ");
+            }
+            if right_align[i] {
+                out.push_str(&format!("{:>w$}", cell, w = widths[i]));
+            } else {
+                out.push_str(&format!("{:<w$}", cell, w = widths[i]));
+            }
+        }
+        out.push('\n');
+    }
+
+    // Totals
+    for (i, w) in widths.iter().enumerate() {
+        if i > 0 {
+            out.push_str("  ");
+        }
+        out.push_str(&"-".repeat(*w));
+    }
+    out.push('\n');
+    for (i, cell) in totals.iter().enumerate() {
+        if i > 0 {
+            out.push_str("  ");
+        }
+        if right_align[i] {
+            out.push_str(&format!("{:>w$}", cell, w = widths[i]));
+        } else {
+            out.push_str(&format!("{:<w$}", cell, w = widths[i]));
+        }
+    }
+    out.push('\n');
+
+    out
+}
+
+fn format_file_size(bytes: u64) -> String {
+    if bytes >= 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else if bytes >= 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{bytes} B")
+    }
 }
 
 fn open_store() -> anyhow::Result<repolyze_store::sqlite::SqliteStore> {
@@ -236,5 +371,42 @@ mod tests {
         assert!(result.is_ok());
         assert!(app.status_message.contains("failed to open database"));
         assert!(app.pending_action.is_none());
+    }
+
+    #[test]
+    fn load_metadata_populates_metadata_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+
+        // Seed DB
+        let store = repolyze_store::sqlite::SqliteStore::open(&db_path).unwrap();
+        store.upsert_repository("/tmp/repo-a", "repo-a").unwrap();
+        drop(store);
+
+        let db_path_clone = db_path.clone();
+        let mut app = AppState::new();
+        app.pending_action = Some(AppAction::LoadMetadata);
+
+        execute_pending_action_with_store_opener(&mut app, move || {
+            repolyze_store::sqlite::SqliteStore::open(&db_path_clone).map_err(|e| anyhow!("{e}"))
+        })
+        .unwrap();
+
+        let text = app.metadata_text.as_ref().unwrap();
+        assert!(text.contains("table"));
+        assert!(text.contains("records"));
+        assert!(text.contains("repositories"));
+        assert!(text.contains("Total"));
+    }
+
+    #[test]
+    fn load_metadata_handles_store_failure() {
+        let mut app = AppState::new();
+        app.pending_action = Some(AppAction::LoadMetadata);
+
+        execute_pending_action_with_store_opener(&mut app, || Err(anyhow!("boom"))).unwrap();
+
+        let text = app.metadata_text.as_ref().unwrap();
+        assert!(text.contains("Failed to open database"));
     }
 }
