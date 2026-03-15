@@ -167,6 +167,8 @@ impl AppState {
     /// Dispatch an analyze action with the current input paths.
     pub fn dispatch_analyze(&mut self) {
         if !self.input_paths.is_empty() {
+            // Clear stale table from previous analysis
+            self.analysis_table = None;
             self.pending_action = Some(AppAction::StartAnalyze {
                 paths: self.input_paths.clone(),
                 view: self.selected_analyze_view.clone(),
@@ -208,6 +210,8 @@ impl AppState {
 
     /// Set analysis result and clear input state.
     pub fn set_result(&mut self, report: ComparisonReport) {
+        // Clear errors from previous runs before adding new ones
+        self.errors.clear();
         self.errors.extend(report.failures.iter().cloned());
         self.analysis_result = Some(report);
         self.input_paths.clear();

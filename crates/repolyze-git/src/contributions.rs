@@ -86,7 +86,7 @@ fn aggregate_contributions(commits: &[ParsedCommit]) -> ContributionSummary {
 
         contributors.push(ContributorStats {
             name: acc.name,
-            email: acc.email,
+            email: email_lower.clone(),
             commits: acc.commits,
             lines_added: acc.lines_added,
             lines_deleted: acc.lines_deleted,

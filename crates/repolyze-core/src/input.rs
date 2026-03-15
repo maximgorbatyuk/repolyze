@@ -77,15 +77,22 @@ fn dedup_targets(targets: Vec<RepositoryTarget>) -> Vec<RepositoryTarget> {
     deduped
 }
 
+const MAX_DISCOVERY_DEPTH: usize = 10;
+
 /// Recursively scan a directory for Git repositories.
 /// Stops descending into a directory once a `.git` marker is found there.
+/// Limits recursion depth to avoid symlink cycles and extremely deep trees.
 fn discover_git_roots(dir: &Path) -> Vec<PathBuf> {
     let mut roots = Vec::new();
-    discover_git_roots_recursive(dir, &mut roots);
+    discover_git_roots_recursive(dir, &mut roots, 0);
     roots
 }
 
-fn discover_git_roots_recursive(dir: &Path, roots: &mut Vec<PathBuf>) {
+fn discover_git_roots_recursive(dir: &Path, roots: &mut Vec<PathBuf>, depth: usize) {
+    if depth > MAX_DISCOVERY_DEPTH {
+        return;
+    }
+
     // .git can be a directory (normal repo) or a file (worktree/submodule)
     if dir.join(".git").exists() {
         if let Ok(canonical) = dir.canonicalize() {
@@ -103,7 +110,7 @@ fn discover_git_roots_recursive(dir: &Path, roots: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            discover_git_roots_recursive(&path, roots);
+            discover_git_roots_recursive(&path, roots, depth + 1);
         }
     }
 }

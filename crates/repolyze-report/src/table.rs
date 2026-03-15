@@ -98,7 +98,9 @@ fn render_ascii_table(headers: &[&str], data: &[Vec<String>]) -> String {
 
 fn format_row(cells: impl Iterator<Item = String>, widths: &[usize]) -> String {
     let mut out = String::new();
-    for (cell, width) in cells.zip(widths.iter()) {
+    let cells_vec: Vec<String> = cells.collect();
+    for (i, width) in widths.iter().enumerate() {
+        let cell = cells_vec.get(i).map(|s| s.as_str()).unwrap_or("");
         out.push_str(&format!("| {:<width$} ", cell, width = width));
     }
     out.push_str("|\n");

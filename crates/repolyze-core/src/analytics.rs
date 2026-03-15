@@ -12,6 +12,14 @@ const WEEKDAY_NAMES: [&str; 7] = [
     "Sunday",
 ];
 
+fn most_active_index(arr: &[u32]) -> usize {
+    arr.iter()
+        .enumerate()
+        .max_by_key(|(_, c)| *c)
+        .map(|(i, _)| i)
+        .unwrap_or(0)
+}
+
 pub fn build_users_contribution_rows(repos: &[RepositoryAnalysis]) -> Vec<UsersContributionRow> {
     let merged = merge_activity_by_email(repos);
     let mut rows: Vec<UsersContributionRow> = merged
@@ -24,13 +32,7 @@ pub fn build_users_contribution_rows(repos: &[RepositoryAnalysis]) -> Vec<UsersC
             } else {
                 0.0
             };
-            let most_active_weekday_idx = m
-                .weekday_commits
-                .iter()
-                .enumerate()
-                .max_by_key(|(_, c)| *c)
-                .map(|(i, _)| i)
-                .unwrap_or(0);
+            let most_active_weekday_idx = most_active_index(&m.weekday_commits);
             UsersContributionRow {
                 email,
                 commits,
@@ -50,24 +52,11 @@ pub fn build_user_activity_rows(repos: &[RepositoryAnalysis]) -> Vec<UserActivit
     let mut rows: Vec<UserActivityRow> = merged
         .into_iter()
         .map(|(email, m)| {
-            let most_active_weekday_idx = m
-                .weekday_commits
-                .iter()
-                .enumerate()
-                .max_by_key(|(_, c)| *c)
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-
-            let most_active_hour_idx = m
-                .hour_commits
-                .iter()
-                .enumerate()
-                .max_by_key(|(_, c)| *c)
-                .map(|(i, _)| i)
-                .unwrap_or(0);
+            let most_active_weekday_idx = most_active_index(&m.weekday_commits);
+            let most_active_hour_idx = most_active_index(&m.hour_commits);
 
             let total_active_dates = m.active_dates.len() as f64;
-            let total_commits: u32 = m.weekday_commits.iter().sum();
+            let total_commits = m.commits;
 
             let average_commits_per_day = if total_active_dates > 0.0 {
                 total_commits as f64 / total_active_dates
@@ -132,46 +121,39 @@ struct MergedContributor {
     active_hour_buckets_by_hour: [BTreeSet<String>; 24],
 }
 
+impl Default for MergedContributor {
+    fn default() -> Self {
+        Self {
+            commits: 0,
+            lines_added: 0,
+            lines_deleted: 0,
+            files_touched: 0,
+            weekday_commits: [0; 7],
+            hour_commits: [0; 24],
+            active_dates: BTreeSet::new(),
+            active_dates_by_weekday: std::array::from_fn(|_| BTreeSet::new()),
+            active_hour_buckets: BTreeSet::new(),
+            active_hour_buckets_by_hour: std::array::from_fn(|_| BTreeSet::new()),
+        }
+    }
+}
+
 fn merge_activity_by_email(repos: &[RepositoryAnalysis]) -> HashMap<String, MergedContributor> {
     let mut map: HashMap<String, MergedContributor> = HashMap::new();
 
     for repo in repos {
-        // Merge contributor stats
         for cs in &repo.contributions.contributors {
             let email = cs.email.to_lowercase();
-            let entry = map.entry(email).or_insert_with(|| MergedContributor {
-                commits: 0,
-                lines_added: 0,
-                lines_deleted: 0,
-                files_touched: 0,
-                weekday_commits: [0; 7],
-                hour_commits: [0; 24],
-                active_dates: BTreeSet::new(),
-                active_dates_by_weekday: std::array::from_fn(|_| BTreeSet::new()),
-                active_hour_buckets: BTreeSet::new(),
-                active_hour_buckets_by_hour: std::array::from_fn(|_| BTreeSet::new()),
-            });
+            let entry = map.entry(email).or_default();
             entry.commits += cs.commits;
             entry.lines_added += cs.lines_added;
             entry.lines_deleted += cs.lines_deleted;
             entry.files_touched += cs.files_touched;
         }
 
-        // Merge activity facts
         for act in &repo.contributions.activity_by_contributor {
             let email = act.email.to_lowercase();
-            let entry = map.entry(email).or_insert_with(|| MergedContributor {
-                commits: 0,
-                lines_added: 0,
-                lines_deleted: 0,
-                files_touched: 0,
-                weekday_commits: [0; 7],
-                hour_commits: [0; 24],
-                active_dates: BTreeSet::new(),
-                active_dates_by_weekday: std::array::from_fn(|_| BTreeSet::new()),
-                active_hour_buckets: BTreeSet::new(),
-                active_hour_buckets_by_hour: std::array::from_fn(|_| BTreeSet::new()),
-            });
+            let entry = map.entry(email).or_default();
             for i in 0..7 {
                 entry.weekday_commits[i] += act.weekday_commits[i];
                 entry.active_dates_by_weekday[i]
@@ -250,7 +232,6 @@ mod tests {
         let dates: BTreeSet<String> = active_dates.iter().map(|s| s.to_string()).collect();
         let mut active_dates_by_weekday: [BTreeSet<String>; 7] =
             std::array::from_fn(|_| BTreeSet::new());
-        // Put all dates into weekday 0 for simplicity in tests
         for (i, &count) in weekday_commits.iter().enumerate() {
             if count > 0 {
                 for d in &dates {

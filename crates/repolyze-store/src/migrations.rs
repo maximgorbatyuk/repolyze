@@ -1,8 +1,6 @@
 pub const SCHEMA_VERSION: i32 = 1;
 
 pub const MIGRATION_V1: &str = r#"
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,

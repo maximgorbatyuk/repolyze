@@ -17,6 +17,9 @@ pub fn run_analyze(
     view: &AnalyzeView,
     format: &OutputFormat,
 ) -> anyhow::Result<String> {
+    // Validate view/format combination before expensive work
+    validate_view_format(view, format)?;
+
     let (targets, input_failures) = resolve_inputs_with_failures(repos);
     let git = GitCliBackend;
     let metrics = FilesystemMetricsBackend;
@@ -32,9 +35,6 @@ pub fn run_analyze(
     match (view, format) {
         (AnalyzeView::All, OutputFormat::Json) => render_json(&report),
         (AnalyzeView::All, OutputFormat::Md) => Ok(render_markdown(&report)),
-        (AnalyzeView::All, OutputFormat::Table) => Err(anyhow::anyhow!(
-            "'all' view does not support table format; use json or md"
-        )),
         (AnalyzeView::UsersContribution, OutputFormat::Table) => {
             let rows = build_users_contribution_rows(&report.repositories);
             Ok(render_users_contribution_table(&rows))
@@ -43,6 +43,17 @@ pub fn run_analyze(
             let rows = build_user_activity_rows(&report.repositories);
             Ok(render_user_activity_table(&rows))
         }
+        _ => unreachable!("validate_view_format should have caught this"),
+    }
+}
+
+fn validate_view_format(view: &AnalyzeView, format: &OutputFormat) -> anyhow::Result<()> {
+    match (view, format) {
+        (AnalyzeView::All, OutputFormat::Json | OutputFormat::Md) => Ok(()),
+        (AnalyzeView::UsersContribution | AnalyzeView::Activity, OutputFormat::Table) => Ok(()),
+        (AnalyzeView::All, OutputFormat::Table) => Err(anyhow::anyhow!(
+            "'all' view does not support table format; use json or md"
+        )),
         (
             AnalyzeView::UsersContribution | AnalyzeView::Activity,
             OutputFormat::Json | OutputFormat::Md,
