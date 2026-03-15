@@ -29,7 +29,6 @@ pub fn draw(frame: &mut Frame, app: &AppState) {
         Screen::Help => draw_help(frame, area),
         Screen::AnalyzeMenu => draw_analyze_menu(frame, app, area),
         Screen::Analyze => draw_analyze(frame, app, area),
-        Screen::Compare => draw_compare(frame, app, area),
         Screen::Metadata => draw_metadata(frame, app, area),
     }
 }
@@ -146,14 +145,8 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         Line::from(""),
         Line::from(" Screens:"),
         Line::from("   Analyze   Analyze one or more repositories"),
-        Line::from("   Compare   Compare multiple repositories"),
         Line::from("   Help      This screen"),
         Line::from("   Metadata  Database info and table row counts"),
-        Line::from(""),
-        Line::from(" In Compare screen:"),
-        Line::from("   Type a path and press Enter to add it"),
-        Line::from("   Press Enter with empty input to run comparison"),
-        Line::from("   Esc       Return to Home"),
     ];
 
     lines.push(Line::from(""));
@@ -259,69 +252,6 @@ fn draw_analyze(frame: &mut Frame, app: &AppState, area: Rect) {
 
     lines.push(Line::from(""));
     lines.push(hints_line(&[("Esc", "Home"), ("Q", "Quit")]));
-
-    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, area);
-}
-
-fn draw_compare(frame: &mut Frame, app: &AppState, area: Rect) {
-    let mut lines = vec![
-        Line::from(Span::styled(
-            " Compare",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-        Line::from(" Enter 2+ repository paths, then press Enter with empty input to compare."),
-        Line::from(""),
-    ];
-
-    for (i, path) in app.input_paths.iter().enumerate() {
-        lines.push(Line::from(format!("   {}. {}", i + 1, path.display())));
-    }
-
-    if !app.input_paths.is_empty() {
-        lines.push(Line::from(""));
-    }
-
-    lines.push(Line::from(format!(" Path: {}_", app.input_buffer)));
-
-    if let Some(report) = &app.analysis_result {
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            " \u{2500}\u{2500} Comparison Results \u{2500}\u{2500}",
-            Style::default().fg(Color::Green),
-        )));
-        lines.push(Line::from(format!(
-            "   Repositories: {}  |  Total commits: {}  |  Contributors: {}  |  Files: {}",
-            report.repositories.len(),
-            report.summary.total_commits,
-            report.summary.total_contributors,
-            report.summary.total_files,
-        )));
-
-        for analysis in &report.repositories {
-            let name = analysis
-                .repository
-                .root
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| analysis.repository.root.to_string_lossy().to_string());
-            lines.push(Line::from(format!(
-                "     {} \u{2014} {} files, {} lines, {} commits",
-                name,
-                analysis.size.files,
-                analysis.size.total_lines,
-                analysis.contributions.total_commits,
-            )));
-        }
-    }
-
-    lines.push(Line::from(""));
-    lines.push(hints_line(&[
-        ("Enter", "Add path / Run"),
-        ("Esc", "Home"),
-        ("Ctrl+C", "Quit"),
-    ]));
 
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);

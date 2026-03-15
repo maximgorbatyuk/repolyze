@@ -9,7 +9,6 @@ pub enum Screen {
     Help,
     AnalyzeMenu,
     Analyze,
-    Compare,
     Metadata,
 }
 
@@ -29,7 +28,6 @@ pub const ANALYZE_MENU_ITEMS: [(&str, AnalyzeView); 3] = [
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuItem {
     Analyze,
-    Compare,
     Help,
     Metadata,
 }
@@ -38,7 +36,6 @@ impl MenuItem {
     pub fn description(&self) -> &'static str {
         match self {
             MenuItem::Analyze => "Analyze one or more repositories",
-            MenuItem::Compare => "Compare multiple repositories",
             MenuItem::Help => "Keybindings and usage guide",
             MenuItem::Metadata => "Database info and table row counts",
         }
@@ -47,7 +44,6 @@ impl MenuItem {
     pub fn screen(&self) -> Screen {
         match self {
             MenuItem::Analyze => Screen::AnalyzeMenu,
-            MenuItem::Compare => Screen::Compare,
             MenuItem::Help => Screen::Help,
             MenuItem::Metadata => Screen::Metadata,
         }
@@ -58,7 +54,6 @@ impl fmt::Display for MenuItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MenuItem::Analyze => write!(f, "Analyze"),
-            MenuItem::Compare => write!(f, "Compare"),
             MenuItem::Help => write!(f, "Help"),
             MenuItem::Metadata => write!(f, "Metadata"),
         }
@@ -71,7 +66,6 @@ pub enum AppAction {
         paths: Vec<PathBuf>,
         view: AnalyzeView,
     },
-    StartCompare(Vec<PathBuf>),
     LoadMetadata,
 }
 
@@ -102,12 +96,7 @@ impl Default for AppState {
 impl AppState {
     pub fn new() -> Self {
         Self {
-            menu_items: vec![
-                MenuItem::Analyze,
-                MenuItem::Compare,
-                MenuItem::Help,
-                MenuItem::Metadata,
-            ],
+            menu_items: vec![MenuItem::Analyze, MenuItem::Help, MenuItem::Metadata],
             selected: 0,
             active_screen: Screen::Home,
             should_quit: false,
@@ -193,12 +182,6 @@ impl AppState {
         }
     }
 
-    pub fn dispatch_compare(&mut self) {
-        if self.input_paths.len() >= 2 {
-            self.pending_action = Some(AppAction::StartCompare(self.input_paths.clone()));
-        }
-    }
-
     pub fn take_action(&mut self) -> Option<AppAction> {
         self.pending_action.take()
     }
@@ -237,12 +220,7 @@ mod tests {
         let app = AppState::new();
         assert_eq!(
             app.menu_items,
-            vec![
-                MenuItem::Analyze,
-                MenuItem::Compare,
-                MenuItem::Help,
-                MenuItem::Metadata,
-            ]
+            vec![MenuItem::Analyze, MenuItem::Help, MenuItem::Metadata,]
         );
     }
 
@@ -254,20 +232,10 @@ mod tests {
     }
 
     #[test]
-    fn navigate_to_compare() {
-        let mut app = AppState::new();
-        app.move_down();
-        assert_eq!(app.selected, 1);
-        app.activate_selected();
-        assert_eq!(app.active_screen, Screen::Compare);
-    }
-
-    #[test]
     fn navigate_to_help() {
         let mut app = AppState::new();
         app.move_down();
-        app.move_down();
-        assert_eq!(app.selected, 2);
+        assert_eq!(app.selected, 1);
         app.activate_selected();
         assert_eq!(app.active_screen, Screen::Help);
     }
@@ -277,8 +245,7 @@ mod tests {
         let mut app = AppState::new();
         app.move_down();
         app.move_down();
-        app.move_down();
-        assert_eq!(app.selected, 3);
+        assert_eq!(app.selected, 2);
         app.activate_selected();
         assert_eq!(app.active_screen, Screen::Metadata);
         assert_eq!(app.pending_action, Some(AppAction::LoadMetadata));
@@ -290,7 +257,7 @@ mod tests {
         for _ in 0..10 {
             app.move_down();
         }
-        assert_eq!(app.selected, 3);
+        assert_eq!(app.selected, 2);
     }
 
     #[test]
@@ -338,17 +305,6 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_compare_requires_two_paths() {
-        let mut app = AppState::new();
-        app.input_paths.push(PathBuf::from("/tmp/a"));
-        app.dispatch_compare();
-        assert!(app.pending_action.is_none());
-        app.input_paths.push(PathBuf::from("/tmp/b"));
-        app.dispatch_compare();
-        assert!(app.pending_action.is_some());
-    }
-
-    #[test]
     fn take_action_clears_pending() {
         let mut app = AppState::new();
         app.input_paths.push(PathBuf::from("/tmp/repo"));
@@ -379,7 +335,6 @@ mod tests {
     fn menu_item_screen_mapping() {
         assert_eq!(MenuItem::Help.screen(), Screen::Help);
         assert_eq!(MenuItem::Analyze.screen(), Screen::AnalyzeMenu);
-        assert_eq!(MenuItem::Compare.screen(), Screen::Compare);
         assert_eq!(MenuItem::Metadata.screen(), Screen::Metadata);
     }
 
@@ -433,12 +388,7 @@ mod tests {
 
     #[test]
     fn menu_items_have_descriptions() {
-        for item in &[
-            MenuItem::Analyze,
-            MenuItem::Compare,
-            MenuItem::Help,
-            MenuItem::Metadata,
-        ] {
+        for item in &[MenuItem::Analyze, MenuItem::Help, MenuItem::Metadata] {
             assert!(!item.description().is_empty());
         }
     }

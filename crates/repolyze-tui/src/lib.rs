@@ -117,44 +117,6 @@ where
                     format!("Analysis complete with {current_failure_count} error(s)");
             }
         }
-        AppAction::StartCompare(paths) => {
-            let (targets, input_failures) = resolve_inputs_with_failures(&paths);
-            let git = GitCliBackend;
-            let metrics = FilesystemMetricsBackend;
-            let store = match open_store_fn() {
-                Ok(store) => store,
-                Err(error) => {
-                    app.status_message =
-                        format!("Compare failed: failed to open database: {error}");
-                    app.analysis_result = None;
-                    app.analysis_table = None;
-                    return Ok(());
-                }
-            };
-            let start = std::time::Instant::now();
-            let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store, "tui");
-            let elapsed = start.elapsed();
-            let current_failure_count = input_failures.len() + report.failures.len();
-
-            if !input_failures.is_empty() {
-                let mut failures = input_failures;
-                failures.extend(report.failures);
-                report.failures = failures;
-            }
-
-            let header = render_analysis_header(&report.repositories, elapsed);
-            let contrib_rows = build_users_contribution_rows(&report.repositories);
-            app.analysis_table = Some(format!(
-                "{header}{}",
-                render_users_contribution_table(&contrib_rows)
-            ));
-
-            app.set_result(report);
-            if current_failure_count > 0 {
-                app.status_message =
-                    format!("Analysis complete with {current_failure_count} error(s)");
-            }
-        }
         AppAction::LoadMetadata => {
             app.metadata_text = Some(build_metadata_text(&open_store_fn));
         }
