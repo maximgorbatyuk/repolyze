@@ -5,7 +5,7 @@ use repolyze_store::sqlite::SqliteStore;
 fn raw_commit_writer_dedupes_commit_hash_per_repository() {
     let dir = tempfile::tempdir().unwrap();
     let db_path = dir.path().join("repolyze.db");
-    let mut store = SqliteStore::open(&db_path).unwrap();
+    let store = SqliteStore::open(&db_path).unwrap();
 
     let repository_id = store.upsert_repository("/tmp/repo-a", "repo-a").unwrap();
     let contributor_id = store

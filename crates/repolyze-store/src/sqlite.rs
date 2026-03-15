@@ -27,7 +27,7 @@ impl SqliteStore {
     }
 
     pub fn upsert_repository(
-        &mut self,
+        &self,
         canonical_path: &str,
         display_name: &str,
     ) -> Result<i64, StoreError> {
@@ -48,7 +48,7 @@ impl SqliteStore {
         Ok(id)
     }
 
-    pub fn upsert_contributor(&mut self, record: &ContributorRecord) -> Result<i64, StoreError> {
+    pub fn upsert_contributor(&self, record: &ContributorRecord) -> Result<i64, StoreError> {
         let now = now_iso();
         self.conn.execute(
             "INSERT INTO contributors (canonical_email, display_name_last_seen, first_seen_at, last_seen_at)
@@ -67,7 +67,7 @@ impl SqliteStore {
     }
 
     pub fn upsert_commit(
-        &mut self,
+        &self,
         commit: &CommitRecord,
         file_changes: &[CommitFileChangeRecord],
     ) -> Result<i64, StoreError> {
@@ -128,7 +128,7 @@ impl SqliteStore {
 
     #[allow(clippy::too_many_arguments)]
     pub fn insert_snapshot_header(
-        &mut self,
+        &self,
         repository_id: i64,
         history_scope: &str,
         head_commit_hash: &str,
@@ -164,7 +164,7 @@ impl SqliteStore {
 
     #[allow(clippy::too_many_arguments)]
     pub fn upsert_snapshot_contributor_summary(
-        &mut self,
+        &self,
         snapshot_id: i64,
         contributor_id: i64,
         commits_count: i64,
@@ -200,7 +200,7 @@ impl SqliteStore {
     }
 
     pub fn upsert_snapshot_contributor_weekday_stat(
-        &mut self,
+        &self,
         snapshot_id: i64,
         contributor_id: i64,
         weekday: i64,
@@ -216,7 +216,7 @@ impl SqliteStore {
     }
 
     pub fn upsert_snapshot_contributor_hour_stat(
-        &mut self,
+        &self,
         snapshot_id: i64,
         contributor_id: i64,
         hour_of_day: i64,
@@ -259,8 +259,118 @@ impl SqliteStore {
     }
 }
 
+impl repolyze_core::service::AnalysisStore for SqliteStore {
+    fn load_snapshot(
+        &self,
+        key: &repolyze_core::service::RepositoryCacheMetadata,
+    ) -> Result<Option<repolyze_core::model::RepositoryAnalysis>, repolyze_core::error::RepolyzeError>
+    {
+        let canonical_path = key.repository_root.to_string_lossy();
+        let repo_id: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT id FROM repositories WHERE canonical_path = ?1",
+                params![canonical_path.as_ref()],
+                |row| row.get(0),
+            )
+            .ok();
+
+        let Some(repo_id) = repo_id else {
+            return Ok(None);
+        };
+
+        let result: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT analysis_payload_json FROM analysis_snapshots
+                 WHERE repository_id = ?1 AND history_scope = ?2 AND head_commit_hash = ?3
+                 AND is_complete = 1
+                 ORDER BY snapshot_created_at DESC LIMIT 1",
+                params![repo_id, key.history_scope, key.head_commit_hash],
+                |row| row.get(0),
+            )
+            .ok();
+
+        match result {
+            Some(json) => {
+                let analysis: repolyze_core::model::RepositoryAnalysis =
+                    serde_json::from_str(&json).map_err(|e| {
+                        repolyze_core::error::RepolyzeError::Store(format!(
+                            "failed to deserialize cached analysis: {e}"
+                        ))
+                    })?;
+                Ok(Some(analysis))
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn save_snapshot(
+        &self,
+        key: &repolyze_core::service::RepositoryCacheMetadata,
+        analysis: &repolyze_core::model::RepositoryAnalysis,
+    ) -> Result<(), repolyze_core::error::RepolyzeError> {
+        let canonical_path = key.repository_root.to_string_lossy().to_string();
+        let display_name = key
+            .repository_root
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| canonical_path.clone());
+
+        let json = serde_json::to_string(analysis).map_err(|e| {
+            repolyze_core::error::RepolyzeError::Store(format!("failed to serialize analysis: {e}"))
+        })?;
+
+        let repo_id = self
+            .upsert_repository(&canonical_path, &display_name)
+            .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
+
+        self.insert_snapshot_header(
+            repo_id,
+            &key.history_scope,
+            &key.head_commit_hash,
+            key.branch_name.as_deref(),
+            None,
+            None,
+            analysis.contributions.total_commits as i64,
+            analysis.contributions.contributors.len() as i64,
+            &json,
+            env!("CARGO_PKG_VERSION"),
+        )
+        .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
+
+        Ok(())
+    }
+
+    fn record_scan_failure(
+        &self,
+        repository_root: &std::path::Path,
+        reason: &str,
+    ) -> Result<(), repolyze_core::error::RepolyzeError> {
+        let canonical_path = repository_root.to_string_lossy().to_string();
+        let display_name = repository_root
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| canonical_path.clone());
+
+        let repo_id = self
+            .upsert_repository(&canonical_path, &display_name)
+            .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
+
+        let now = now_iso();
+        self.conn
+            .execute(
+                "INSERT INTO scan_runs (repository_id, trigger_source, cache_status, started_at, status, failure_reason)
+                 VALUES (?1, 'cli', 'miss', ?2, 'failed', ?3)",
+                params![repo_id, now, reason],
+            )
+            .map_err(|e| repolyze_core::error::RepolyzeError::Store(e.to_string()))?;
+
+        Ok(())
+    }
+}
+
 fn now_iso() -> String {
-    // Simple UTC timestamp without external dependency
     use std::time::SystemTime;
     let duration = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)

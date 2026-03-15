@@ -5,7 +5,7 @@ use repolyze_store::sqlite::SqliteStore;
 fn snapshot_writer_persists_summary_weekday_and_hour_stats() {
     let dir = tempfile::tempdir().unwrap();
     let db_path = dir.path().join("repolyze.db");
-    let mut store = SqliteStore::open(&db_path).unwrap();
+    let store = SqliteStore::open(&db_path).unwrap();
 
     let repository_id = store.upsert_repository("/tmp/repo-a", "repo-a").unwrap();
     let snapshot_id = store
