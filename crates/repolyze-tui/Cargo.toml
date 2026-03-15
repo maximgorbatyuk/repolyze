@@ -12,6 +12,7 @@ ratatui = "0.29"
 repolyze-core = { path = "../repolyze-core" }
 repolyze-git = { path = "../repolyze-git" }
 repolyze-metrics = { path = "../repolyze-metrics" }
+repolyze-store = { path = "../repolyze-store" }
 
 [dev-dependencies]
 tempfile = "3"

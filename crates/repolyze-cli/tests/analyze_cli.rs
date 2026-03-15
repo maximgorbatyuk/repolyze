@@ -157,3 +157,38 @@ fn directory_flag_with_invalid_path_fails() {
         .failure()
         .stderr(predicate::str::contains("cannot change to directory"));
 }
+
+#[test]
+fn analyze_reuses_existing_database_on_second_run() {
+    let repo = create_fixture_repo();
+    let home = tempfile::tempdir().unwrap();
+
+    let mut first = Command::cargo_bin("repolyze").unwrap();
+    first
+        .env("HOME", home.path())
+        .args([
+            "analyze",
+            "--repo",
+            repo.path().to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success();
+
+    let db_path = home.path().join(".repolyze/repolyze.db");
+    assert!(db_path.exists());
+
+    let mut second = Command::cargo_bin("repolyze").unwrap();
+    second
+        .env("HOME", home.path())
+        .args([
+            "analyze",
+            "--repo",
+            repo.path().to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success();
+}

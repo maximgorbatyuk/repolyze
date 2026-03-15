@@ -18,6 +18,7 @@ repolyze-core = { path = "../repolyze-core" }
 repolyze-git = { path = "../repolyze-git" }
 repolyze-metrics = { path = "../repolyze-metrics" }
 repolyze-report = { path = "../repolyze-report" }
+repolyze-store = { path = "../repolyze-store" }
 repolyze-tui = { path = "../repolyze-tui" }
 
 [dev-dependencies]
