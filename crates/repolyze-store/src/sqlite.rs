@@ -125,6 +125,138 @@ impl SqliteStore {
         )?;
         Ok(count)
     }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_snapshot_header(
+        &mut self,
+        repository_id: i64,
+        history_scope: &str,
+        head_commit_hash: &str,
+        branch_name: Option<&str>,
+        analysis_period_start_at: Option<&str>,
+        analysis_period_end_at: Option<&str>,
+        commits_count: i64,
+        contributors_count: i64,
+        analysis_payload_json: &str,
+        repolyze_version: &str,
+    ) -> Result<i64, StoreError> {
+        let now = now_iso();
+        self.conn.execute(
+            "INSERT INTO analysis_snapshots (repository_id, history_scope, head_commit_hash, branch_name, analysis_period_start_at, analysis_period_end_at, commits_count, contributors_count, analysis_payload_json, snapshot_created_at, repolyze_version, schema_version)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                repository_id,
+                history_scope,
+                head_commit_hash,
+                branch_name,
+                analysis_period_start_at,
+                analysis_period_end_at,
+                commits_count,
+                contributors_count,
+                analysis_payload_json,
+                now,
+                repolyze_version,
+                crate::migrations::SCHEMA_VERSION,
+            ],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_snapshot_contributor_summary(
+        &mut self,
+        snapshot_id: i64,
+        contributor_id: i64,
+        commits_count: i64,
+        lines_added: i64,
+        lines_deleted: i64,
+        lines_modified: i64,
+        files_touched_count: i64,
+        active_days_count: i64,
+        first_commit_at: &str,
+        last_commit_at: &str,
+        most_active_weekday: Option<i64>,
+        most_active_hour: Option<i64>,
+    ) -> Result<(), StoreError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO snapshot_contributor_summaries (snapshot_id, contributor_id, commits_count, lines_added, lines_deleted, lines_modified, files_touched_count, active_days_count, first_commit_at, last_commit_at, most_active_weekday, most_active_hour)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                snapshot_id,
+                contributor_id,
+                commits_count,
+                lines_added,
+                lines_deleted,
+                lines_modified,
+                files_touched_count,
+                active_days_count,
+                first_commit_at,
+                last_commit_at,
+                most_active_weekday,
+                most_active_hour,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn upsert_snapshot_contributor_weekday_stat(
+        &mut self,
+        snapshot_id: i64,
+        contributor_id: i64,
+        weekday: i64,
+        commits_count: i64,
+        active_dates_count: i64,
+    ) -> Result<(), StoreError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO snapshot_contributor_weekday_stats (snapshot_id, contributor_id, weekday, commits_count, active_dates_count)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![snapshot_id, contributor_id, weekday, commits_count, active_dates_count],
+        )?;
+        Ok(())
+    }
+
+    pub fn upsert_snapshot_contributor_hour_stat(
+        &mut self,
+        snapshot_id: i64,
+        contributor_id: i64,
+        hour_of_day: i64,
+        commits_count: i64,
+        active_hour_buckets_count: i64,
+    ) -> Result<(), StoreError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO snapshot_contributor_hour_stats (snapshot_id, contributor_id, hour_of_day, commits_count, active_hour_buckets_count)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![snapshot_id, contributor_id, hour_of_day, commits_count, active_hour_buckets_count],
+        )?;
+        Ok(())
+    }
+
+    pub fn snapshot_summary_row_count(&self, snapshot_id: i64) -> Result<i64, StoreError> {
+        let count = self.conn.query_row(
+            "SELECT COUNT(*) FROM snapshot_contributor_summaries WHERE snapshot_id = ?1",
+            params![snapshot_id],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    pub fn snapshot_weekday_row_count(&self, snapshot_id: i64) -> Result<i64, StoreError> {
+        let count = self.conn.query_row(
+            "SELECT COUNT(*) FROM snapshot_contributor_weekday_stats WHERE snapshot_id = ?1",
+            params![snapshot_id],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    pub fn snapshot_hour_row_count(&self, snapshot_id: i64) -> Result<i64, StoreError> {
+        let count = self.conn.query_row(
+            "SELECT COUNT(*) FROM snapshot_contributor_hour_stats WHERE snapshot_id = ?1",
+            params![snapshot_id],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
 }
 
 fn now_iso() -> String {

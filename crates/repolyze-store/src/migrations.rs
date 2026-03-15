@@ -97,4 +97,47 @@ CREATE INDEX IF NOT EXISTS idx_repository_commits_contributor_datetime
 
 CREATE INDEX IF NOT EXISTS idx_commit_file_changes_commit
   ON commit_file_changes (commit_id);
+
+CREATE TABLE IF NOT EXISTS snapshot_commits (
+  snapshot_id INTEGER NOT NULL REFERENCES analysis_snapshots(id),
+  commit_id INTEGER NOT NULL REFERENCES repository_commits(id),
+  PRIMARY KEY (snapshot_id, commit_id)
+);
+
+CREATE TABLE IF NOT EXISTS snapshot_contributor_summaries (
+  snapshot_id INTEGER NOT NULL REFERENCES analysis_snapshots(id),
+  contributor_id INTEGER NOT NULL REFERENCES contributors(id),
+  commits_count INTEGER NOT NULL,
+  lines_added INTEGER NOT NULL,
+  lines_deleted INTEGER NOT NULL,
+  lines_modified INTEGER NOT NULL,
+  files_touched_count INTEGER NOT NULL,
+  active_days_count INTEGER NOT NULL,
+  first_commit_at TEXT NOT NULL,
+  last_commit_at TEXT NOT NULL,
+  most_active_weekday INTEGER,
+  most_active_hour INTEGER,
+  PRIMARY KEY (snapshot_id, contributor_id)
+);
+
+CREATE TABLE IF NOT EXISTS snapshot_contributor_weekday_stats (
+  snapshot_id INTEGER NOT NULL REFERENCES analysis_snapshots(id),
+  contributor_id INTEGER NOT NULL REFERENCES contributors(id),
+  weekday INTEGER NOT NULL,
+  commits_count INTEGER NOT NULL,
+  active_dates_count INTEGER NOT NULL,
+  PRIMARY KEY (snapshot_id, contributor_id, weekday)
+);
+
+CREATE TABLE IF NOT EXISTS snapshot_contributor_hour_stats (
+  snapshot_id INTEGER NOT NULL REFERENCES analysis_snapshots(id),
+  contributor_id INTEGER NOT NULL REFERENCES contributors(id),
+  hour_of_day INTEGER NOT NULL,
+  commits_count INTEGER NOT NULL,
+  active_hour_buckets_count INTEGER NOT NULL,
+  PRIMARY KEY (snapshot_id, contributor_id, hour_of_day)
+);
+
+CREATE INDEX IF NOT EXISTS idx_snapshot_contributor_summaries_contributor
+  ON snapshot_contributor_summaries (contributor_id);
 "#;
