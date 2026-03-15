@@ -1,4 +1,64 @@
-use repolyze_core::model::{UserActivityRow, UsersContributionRow};
+use std::time::Duration;
+
+use repolyze_core::model::{RepositoryAnalysis, UserActivityRow, UsersContributionRow};
+
+/// Build a summary header showing period, repo count, and elapsed time.
+pub fn render_analysis_header(repos: &[RepositoryAnalysis], elapsed: Duration) -> String {
+    let repo_count = repos.len();
+
+    // Derive period from earliest first_commit and latest last_commit across all contributors
+    let mut earliest: Option<&str> = None;
+    let mut latest: Option<&str> = None;
+    for repo in repos {
+        for c in &repo.contributions.contributors {
+            if !c.first_commit.is_empty() {
+                earliest = Some(match earliest {
+                    Some(e) if e <= c.first_commit.as_str() => e,
+                    _ => &c.first_commit,
+                });
+            }
+            if !c.last_commit.is_empty() {
+                latest = Some(match latest {
+                    Some(l) if l >= c.last_commit.as_str() => l,
+                    _ => &c.last_commit,
+                });
+            }
+        }
+    }
+
+    let period_start = earliest.map(format_date).unwrap_or_else(|| "?".to_string());
+    let period_end = latest.map(format_date).unwrap_or_else(|| "?".to_string());
+    let elapsed_str = format_duration(elapsed);
+
+    let mut out = String::new();
+    out.push_str(&format!("Period:    {period_start} .. {period_end}\n"));
+    out.push_str(&format!(
+        "Projects:  {repo_count} repositor{}\n",
+        if repo_count == 1 { "y" } else { "ies" }
+    ));
+    out.push_str(&format!("Elapsed:   {elapsed_str}\n"));
+    out.push('\n');
+    out
+}
+
+/// Extract date portion from an ISO 8601 timestamp (or return as-is if short).
+fn format_date(ts: &str) -> String {
+    ts.split('T').next().unwrap_or(ts).to_string()
+}
+
+fn format_duration(d: Duration) -> String {
+    let total_secs = d.as_secs();
+    let millis = d.subsec_millis();
+    if total_secs >= 60 {
+        let mins = total_secs / 60;
+        let secs = total_secs % 60;
+        format!("{mins}m {secs}.{millis:03}s")
+    } else if total_secs > 0 {
+        format!("{total_secs}.{millis:03}s")
+    } else {
+        format!("0.{millis:03}s")
+    }
+}
 
 pub fn render_users_contribution_table(rows: &[UsersContributionRow]) -> String {
     if rows.is_empty() {

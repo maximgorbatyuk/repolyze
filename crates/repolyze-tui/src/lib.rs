@@ -15,7 +15,9 @@ use repolyze_core::input::resolve_inputs_with_failures;
 use repolyze_core::service::analyze_targets_with_store;
 use repolyze_git::backend::GitCliBackend;
 use repolyze_metrics::FilesystemMetricsBackend;
-use repolyze_report::table::{render_user_activity_table, render_users_contribution_table};
+use repolyze_report::table::{
+    render_analysis_header, render_user_activity_table, render_users_contribution_table,
+};
 
 use app::{AnalyzeView, AppAction, AppState, Screen};
 
@@ -77,7 +79,9 @@ where
                     return Ok(());
                 }
             };
+            let start = std::time::Instant::now();
             let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store, "tui");
+            let elapsed = start.elapsed();
             let current_failure_count = input_failures.len() + report.failures.len();
 
             if !input_failures.is_empty() {
@@ -86,21 +90,23 @@ where
                 report.failures = failures;
             }
 
-            // Generate table for analytics views
-            match view {
+            // Build header + table for all views
+            let header = render_analysis_header(&report.repositories, elapsed);
+            let table_body = match view {
                 AnalyzeView::UsersContribution => {
                     let rows = build_users_contribution_rows(&report.repositories);
-                    app.analysis_table = Some(render_users_contribution_table(&rows));
+                    render_users_contribution_table(&rows)
                 }
                 AnalyzeView::Activity => {
                     let rows = build_user_activity_rows(&report.repositories);
-                    app.analysis_table = Some(render_user_activity_table(&rows));
+                    render_user_activity_table(&rows)
                 }
                 AnalyzeView::All => {
                     let rows = build_users_contribution_rows(&report.repositories);
-                    app.analysis_table = Some(render_users_contribution_table(&rows));
+                    render_users_contribution_table(&rows)
                 }
-            }
+            };
+            app.analysis_table = Some(format!("{header}{table_body}"));
 
             app.set_result(report);
             if current_failure_count > 0 {
