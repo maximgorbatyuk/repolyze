@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 
-use crate::app::{ANALYZE_MENU_ITEMS, AppState, Screen};
+use crate::app::{ANALYZE_MENU_ITEMS, AnalyzeView, AppState, Screen};
 
 const LOGO: &str = r#"
   ____                  _
@@ -150,9 +150,9 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         Line::from("   Help      This screen"),
         Line::from("   Errors    View analysis errors"),
         Line::from(""),
-        Line::from(" In Analyze/Compare screens:"),
+        Line::from(" In Compare screen:"),
         Line::from("   Type a path and press Enter to add it"),
-        Line::from("   Press Enter with empty input to run analysis"),
+        Line::from("   Press Enter with empty input to run comparison"),
         Line::from("   Esc       Return to Home"),
     ];
 
@@ -203,37 +203,33 @@ fn draw_analyze_menu(frame: &mut Frame, app: &AppState, area: Rect) {
 }
 
 fn draw_analyze(frame: &mut Frame, app: &AppState, area: Rect) {
+    let view_label = match &app.selected_analyze_view {
+        AnalyzeView::All => "All",
+        AnalyzeView::UsersContribution => "Users contribution",
+        AnalyzeView::Activity => "Most active days and hours",
+    };
+
     let mut lines = vec![
         Line::from(Span::styled(
-            " Analyze",
+            format!(" Analyze \u{2014} {view_label}"),
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from(" Enter repository path(s), then press Enter with empty input to analyze."),
-        Line::from(""),
     ];
 
-    for (i, path) in app.input_paths.iter().enumerate() {
-        lines.push(Line::from(format!("   {}. {}", i + 1, path.display())));
-    }
-
-    if !app.input_paths.is_empty() {
-        lines.push(Line::from(""));
-    }
-
-    lines.push(Line::from(format!(" Path: {}_", app.input_buffer)));
-
-    if let Some(table) = &app.analysis_table {
-        lines.push(Line::from(""));
+    if app.pending_action.is_some() {
+        // Analysis is about to run
+        lines.push(Line::from(Span::styled(
+            " Analyzing...",
+            Style::default().fg(Color::Yellow),
+        )));
+    } else if let Some(table) = &app.analysis_table {
+        // Analytics view with ASCII table
         for table_line in table.lines() {
             lines.push(Line::from(format!(" {table_line}")));
         }
     } else if let Some(report) = &app.analysis_result {
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            " \u{2500}\u{2500} Results \u{2500}\u{2500}",
-            Style::default().fg(Color::Green),
-        )));
+        // All view with summary
         for analysis in &report.repositories {
             let name = analysis
                 .repository
@@ -249,14 +245,20 @@ fn draw_analyze(frame: &mut Frame, app: &AppState, area: Rect) {
                 analysis.contributions.contributors.len(),
             )));
         }
+    } else {
+        lines.push(Line::from(" No results yet."));
+    }
+
+    if !app.status_message.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            format!(" {}", app.status_message),
+            Style::default().fg(Color::DarkGray),
+        )));
     }
 
     lines.push(Line::from(""));
-    lines.push(hints_line(&[
-        ("Enter", "Add path / Run"),
-        ("Esc", "Home"),
-        ("Q", "Quit"),
-    ]));
+    lines.push(hints_line(&[("Esc", "Home"), ("Q", "Quit")]));
 
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);

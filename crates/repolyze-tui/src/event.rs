@@ -8,8 +8,8 @@ pub fn handle_key(app: &mut AppState, code: KeyCode) {
         Screen::Home => handle_home(app, code),
         Screen::Help | Screen::Errors => handle_global(app, code),
         Screen::AnalyzeMenu => handle_analyze_menu(app, code),
-        Screen::Analyze => handle_input_screen(app, code, false),
-        Screen::Compare => handle_input_screen(app, code, true),
+        Screen::Analyze => handle_results_screen(app, code),
+        Screen::Compare => handle_input_screen(app, code),
     }
 }
 
@@ -54,8 +54,17 @@ fn handle_analyze_menu(app: &mut AppState, code: KeyCode) {
     }
 }
 
-/// Key handling for Analyze/Compare screens with path input.
-fn handle_input_screen(app: &mut AppState, code: KeyCode, is_compare: bool) {
+/// Key handling for the Analyze results screen.
+fn handle_results_screen(app: &mut AppState, code: KeyCode) {
+    match code {
+        KeyCode::Char('q') => app.quit(),
+        KeyCode::Esc => app.go_home(),
+        _ => {}
+    }
+}
+
+/// Key handling for Compare screen with path input.
+fn handle_input_screen(app: &mut AppState, code: KeyCode) {
     match code {
         KeyCode::Esc => {
             app.input_buffer.clear();
@@ -63,11 +72,7 @@ fn handle_input_screen(app: &mut AppState, code: KeyCode, is_compare: bool) {
         }
         KeyCode::Enter => {
             if app.input_buffer.is_empty() && !app.input_paths.is_empty() {
-                if is_compare {
-                    app.dispatch_compare();
-                } else {
-                    app.dispatch_analyze();
-                }
+                app.dispatch_compare();
             } else {
                 app.add_input_path();
             }
