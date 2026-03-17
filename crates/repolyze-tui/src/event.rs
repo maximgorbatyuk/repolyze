@@ -55,6 +55,8 @@ fn handle_results_screen(app: &mut AppState, code: KeyCode) {
     match code {
         KeyCode::Char('q') => app.quit(),
         KeyCode::Esc => app.go_home(),
+        KeyCode::Up | KeyCode::Char('k') => app.scroll_up(),
+        KeyCode::Down | KeyCode::Char('j') => app.scroll_down(),
         _ => {}
     }
 }

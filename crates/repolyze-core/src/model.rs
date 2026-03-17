@@ -127,7 +127,6 @@ pub struct UsersContributionRow {
     pub lines_modified: u64,
     pub lines_per_commit: f64,
     pub files_touched: u64,
-    pub most_active_week_day: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -151,6 +150,45 @@ pub struct HeatmapData {
     pub week_count: usize,
     pub max_count: u32,
     pub month_labels: Vec<(usize, String)>,
+}
+
+impl HeatmapData {
+    /// Returns 5 legend labels showing the commit-count range for each intensity level.
+    /// Order: None, Low, Medium, High, Maximum.
+    pub fn legend_labels(&self) -> [String; 5] {
+        let max = self.max_count;
+        if max == 0 {
+            return ["0".into(), "0".into(), "0".into(), "0".into(), "0".into()];
+        }
+
+        let t1 = (max as f64 * 0.25).floor() as u32;
+        let t2 = (max as f64 * 0.50).floor() as u32;
+        let t3 = (max as f64 * 0.75).floor() as u32;
+
+        let low_lo = 1;
+        let low_hi = t1.max(1);
+        let med_lo = low_hi + 1;
+        let med_hi = t2.max(med_lo);
+        let high_lo = med_hi + 1;
+        let high_hi = t3.max(high_lo);
+        let max_lo = high_hi + 1;
+
+        let fmt_range = |lo: u32, hi: u32| -> String {
+            if lo == hi {
+                format!("{lo}")
+            } else {
+                format!("{lo}-{hi}")
+            }
+        };
+
+        [
+            "0".into(),
+            fmt_range(low_lo, low_hi),
+            fmt_range(med_lo, med_hi),
+            fmt_range(high_lo, high_hi),
+            fmt_range(max_lo, max),
+        ]
+    }
 }
 
 #[cfg(test)]
@@ -179,5 +217,41 @@ mod tests {
         assert_eq!(size.files, 0);
         assert_eq!(size.total_bytes, 0);
         assert!(size.by_extension.is_empty());
+    }
+
+    fn make_heatmap(max_count: u32) -> HeatmapData {
+        HeatmapData {
+            start_date: "2024-01-01".into(),
+            end_date: "2025-01-01".into(),
+            grid: [[0; HEATMAP_MAX_WEEKS]; DAYS_IN_WEEK],
+            week_count: 52,
+            max_count,
+            month_labels: vec![],
+        }
+    }
+
+    #[test]
+    fn legend_labels_zero_max() {
+        let labels = make_heatmap(0).legend_labels();
+        assert_eq!(labels, ["0", "0", "0", "0", "0"]);
+    }
+
+    #[test]
+    fn legend_labels_max_one() {
+        let labels = make_heatmap(1).legend_labels();
+        // All non-zero levels collapse to 1
+        assert_eq!(labels[0], "0");
+        assert!(labels.iter().all(|l| !l.is_empty()));
+    }
+
+    #[test]
+    fn legend_labels_max_twelve() {
+        let labels = make_heatmap(12).legend_labels();
+        // 25% of 12 = 3, 50% = 6, 75% = 9
+        assert_eq!(labels[0], "0");
+        assert_eq!(labels[1], "1-3");
+        assert_eq!(labels[2], "4-6");
+        assert_eq!(labels[3], "7-9");
+        assert_eq!(labels[4], "10-12");
     }
 }

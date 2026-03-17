@@ -95,7 +95,6 @@ pub struct UsersContributionRowRecord {
     pub lines_modified: i64,
     pub lines_per_commit: f64,
     pub files_touched: i64,
-    pub most_active_week_day: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]

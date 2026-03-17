@@ -2,6 +2,17 @@ use std::time::Duration;
 
 use repolyze_core::model::{RepositoryAnalysis, UserActivityRow, UsersContributionRow};
 
+pub const USERS_CONTRIBUTION_TITLE: &str = "Users contribution";
+pub const USERS_CONTRIBUTION_DESC: &str =
+    "Per-contributor commit counts, lines modified, and files touched.";
+
+pub const ACTIVITY_TITLE: &str = "Most active days and hours";
+pub const ACTIVITY_DESC: &str =
+    "Average commit frequency by weekday and hour for each contributor.";
+
+pub const HEATMAP_TITLE: &str = "Activity heatmap";
+pub const HEATMAP_DESC: &str = "Daily commit activity over the past year, grouped by week.";
+
 /// Build a summary header showing period, repo count, and elapsed time.
 pub fn render_analysis_header(repos: &[RepositoryAnalysis], elapsed: Duration) -> String {
     let repo_count = repos.len();
@@ -81,15 +92,16 @@ pub fn render_users_contribution_table(rows: &[UsersContributionRow]) -> String 
         return "No contributor data available.".to_string();
     }
 
+    let mut out = format!("{USERS_CONTRIBUTION_DESC}\n\n");
+
     let headers = &[
         "Email",
         "Commits",
         "Lines Modified",
         "Lines per commit",
         "Files Touched",
-        "Most active week day",
     ];
-    let right_align = &[false, true, true, true, true, false];
+    let right_align = &[false, true, true, true, true];
 
     let data: Vec<Vec<String>> = rows
         .iter()
@@ -100,7 +112,6 @@ pub fn render_users_contribution_table(rows: &[UsersContributionRow]) -> String 
                 r.lines_modified.to_string(),
                 format!("{:.2}", r.lines_per_commit),
                 r.files_touched.to_string(),
-                r.most_active_week_day.clone(),
             ]
         })
         .collect();
@@ -119,10 +130,10 @@ pub fn render_users_contribution_table(rows: &[UsersContributionRow]) -> String 
         total_lines.to_string(),
         format!("{:.2}", total_lpc),
         total_files.to_string(),
-        String::new(),
     ];
 
-    render_plain_table(headers, &data, right_align, Some(&totals))
+    out.push_str(&render_plain_table(headers, &data, right_align, Some(&totals)));
+    out
 }
 
 pub fn render_user_activity_table(rows: &[UserActivityRow]) -> String {
@@ -130,14 +141,16 @@ pub fn render_user_activity_table(rows: &[UserActivityRow]) -> String {
         return "No activity data available.".to_string();
     }
 
-    let headers = &[
-        "Email",
-        "Most active week day",
-        "Avg commits/day (best day)",
-        "Avg commits/day",
-        "Avg commits/hour (best hour)",
-        "Avg commits/hour",
-    ];
+    let mut legend = format!("{ACTIVITY_DESC}\n\n");
+    legend.push_str("Legend:\n");
+    legend.push_str("  Day         Most active week day\n");
+    legend.push_str("  C/D (best)  Avg commits per active day on the most active weekday\n");
+    legend.push_str("  C/D         Avg commits per active day\n");
+    legend.push_str("  C/H (best)  Avg commits per active hour-bucket on the most active hour\n");
+    legend.push_str("  C/H         Avg commits per active hour-bucket\n");
+    legend.push('\n');
+
+    let headers = &["Email", "Day", "C/D (best)", "C/D", "C/H (best)", "C/H"];
     let right_align = &[false, false, true, true, true, true];
 
     let data: Vec<Vec<String>> = rows
@@ -154,7 +167,10 @@ pub fn render_user_activity_table(rows: &[UserActivityRow]) -> String {
         })
         .collect();
 
-    render_plain_table(headers, &data, right_align, None)
+    format!(
+        "{legend}{}",
+        render_plain_table(headers, &data, right_align, None)
+    )
 }
 
 fn render_plain_table(
@@ -251,7 +267,6 @@ mod tests {
             lines_modified: 42,
             lines_per_commit: 8.4,
             files_touched: 4,
-            most_active_week_day: "Monday".to_string(),
         }];
 
         let table = render_users_contribution_table(&rows);
@@ -261,7 +276,7 @@ mod tests {
         assert!(table.contains("Lines Modified"));
         assert!(table.contains("Lines per commit"));
         assert!(table.contains("Files Touched"));
-        assert!(table.contains("Most active week day"));
+        assert!(!table.contains("Most active week day"));
         assert!(table.contains("alice@example.com"));
         assert!(table.contains("Total"));
     }
@@ -275,7 +290,6 @@ mod tests {
                 lines_modified: 5000,
                 lines_per_commit: 50.0,
                 files_touched: 20,
-                most_active_week_day: "Monday".to_string(),
             },
             UsersContributionRow {
                 email: "bob@example.com".to_string(),
@@ -283,7 +297,6 @@ mod tests {
                 lines_modified: 42,
                 lines_per_commit: 8.4,
                 files_touched: 4,
-                most_active_week_day: "Friday".to_string(),
             },
         ];
 
@@ -310,8 +323,12 @@ mod tests {
 
         let table = render_user_activity_table(&rows);
 
-        assert!(table.contains("Avg commits/day (best day)"));
-        assert!(table.contains("Avg commits/hour (best hour)"));
+        assert!(table.contains("Legend:"));
+        assert!(table.contains("C/D (best)"));
+        assert!(table.contains("C/H (best)"));
+        assert!(table.contains("C/D"));
+        assert!(table.contains("C/H"));
+        assert!(table.contains("Day"));
         assert!(table.contains("alice@example.com"));
         assert!(!table.contains('|'));
     }

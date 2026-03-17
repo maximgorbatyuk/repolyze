@@ -265,7 +265,7 @@ fn analyze_users_contribution_discovers_repos_under_directory() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Email"))
-        .stdout(predicate::str::contains("Most active week day"));
+        .stdout(predicate::str::contains("Files Touched"));
 }
 
 #[test]
@@ -284,7 +284,7 @@ fn analyze_activity_outputs_ascii_table() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Avg commits/day (best day)"));
+        .stdout(predicate::str::contains("C/D (best)"));
 }
 
 #[test]
@@ -301,7 +301,7 @@ fn analyze_users_contribution_defaults_to_table_format() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Most active week day"));
+        .stdout(predicate::str::contains("Files Touched"));
 }
 
 #[test]

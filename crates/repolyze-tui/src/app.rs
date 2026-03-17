@@ -90,6 +90,9 @@ pub struct AppState {
     pub metadata_text: Option<String>,
     pub is_loading: bool,
     pub spinner_frame: usize,
+    pub scroll_offset: u16,
+    pub content_height: u16,
+    pub visible_height: u16,
 }
 
 impl Default for AppState {
@@ -118,6 +121,9 @@ impl AppState {
             metadata_text: None,
             is_loading: false,
             spinner_frame: 0,
+            scroll_offset: 0,
+            content_height: 0,
+            visible_height: 0,
         }
     }
 
@@ -151,6 +157,7 @@ impl AppState {
         self.metadata_text = None;
         self.is_loading = false;
         self.spinner_frame = 0;
+        self.scroll_offset = 0;
         self.status_message = "Ready".to_string();
     }
 
@@ -175,6 +182,7 @@ impl AppState {
             self.analysis_result = None;
             self.analysis_table = None;
             self.heatmap_data = None;
+            self.scroll_offset = 0;
             self.input_paths.clear();
             self.input_buffer.clear();
             self.input_paths.push(PathBuf::from("."));
@@ -213,6 +221,17 @@ impl AppState {
         if !path.is_empty() {
             self.input_paths.push(PathBuf::from(path));
             self.input_buffer.clear();
+        }
+    }
+
+    pub fn scroll_up(&mut self) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(1);
+    }
+
+    pub fn scroll_down(&mut self) {
+        let max_offset = self.content_height.saturating_sub(self.visible_height);
+        if self.scroll_offset < max_offset {
+            self.scroll_offset += 1;
         }
     }
 }

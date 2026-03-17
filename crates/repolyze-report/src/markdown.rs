@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use repolyze_core::model::{ComparisonReport, ContributorStats};
+use repolyze_core::analytics::build_heatmap_data;
+use repolyze_core::date_util;
+use repolyze_core::model::{ComparisonReport, ContributorStats, HeatmapData};
 
 const WEEKDAY_NAMES: [&str; 7] = [
     "Monday",
@@ -148,6 +150,11 @@ pub fn render_markdown(report: &ComparisonReport) -> String {
     }
     out.push('\n');
 
+    // Activity heatmap
+    let today = date_util::today_ymd();
+    let heatmap = build_heatmap_data(&report.repositories, None, &today);
+    out.push_str(&render_heatmap_section(&heatmap));
+
     // Failures
     if !report.failures.is_empty() {
         out.push_str("## Failures\n\n");
@@ -160,6 +167,76 @@ pub fn render_markdown(report: &ComparisonReport) -> String {
         }
         out.push('\n');
     }
+
+    out
+}
+
+fn heatmap_char(count: u32, max: u32) -> char {
+    if count == 0 || max == 0 {
+        '\u{b7}' // ·
+    } else {
+        let ratio = count as f64 / max as f64;
+        if ratio <= 0.25 {
+            '\u{2591}' // ░
+        } else if ratio <= 0.50 {
+            '\u{2592}' // ▒
+        } else if ratio <= 0.75 {
+            '\u{2593}' // ▓
+        } else {
+            '\u{2588}' // █
+        }
+    }
+}
+
+fn render_heatmap_section(data: &HeatmapData) -> String {
+    let mut out = String::new();
+    out.push_str("## Activity Heatmap\n\n");
+    out.push_str(&format!(
+        "Period: {} .. {}\n\n",
+        data.start_date, data.end_date
+    ));
+    out.push_str("```\n");
+
+    // Month labels row
+    out.push_str("     ");
+    let mut last_col = 0;
+    for (col, label) in &data.month_labels {
+        let char_pos = col * 2;
+        if char_pos > last_col {
+            out.push_str(&" ".repeat(char_pos - last_col));
+        }
+        out.push_str(label);
+        last_col = char_pos + label.len();
+    }
+    out.push('\n');
+
+    // Weekday rows
+    let weekday_labels = ["Mon", "   ", "Wed", "   ", "Fri", "   ", "Sun"];
+    for (weekday, label) in weekday_labels.iter().enumerate() {
+        out.push_str(&format!("{label}  "));
+        for week_col in 0..data.week_count {
+            let count = data.grid[weekday][week_col];
+            out.push(heatmap_char(count, data.max_count));
+            out.push(' ');
+        }
+        out.push('\n');
+    }
+
+    // Legend with commit-count ranges
+    let labels = data.legend_labels();
+    let chars = ['\u{b7}', '\u{2591}', '\u{2592}', '\u{2593}', '\u{2588}'];
+    out.push('\n');
+    out.push_str("     ");
+    for (i, (ch, label)) in chars.iter().zip(labels.iter()).enumerate() {
+        if i > 0 {
+            out.push_str("  ");
+        }
+        out.push(*ch);
+        out.push(' ');
+        out.push_str(label);
+    }
+    out.push('\n');
+    out.push_str("```\n\n");
 
     out
 }
@@ -291,6 +368,19 @@ mod tests {
 
         assert_eq!(md.matches("| Alice | alice@example.com |").count(), 1);
         assert!(md.contains("| Alice | alice@example.com | 15 | 300 | 75 | 225 |"));
+    }
+
+    #[test]
+    fn markdown_report_contains_heatmap_section() {
+        let report = make_two_repo_report();
+        let md = render_markdown(&report);
+        assert!(md.contains("## Activity Heatmap"));
+        assert!(md.contains("Mon"));
+        assert!(md.contains("Wed"));
+        assert!(md.contains("Fri"));
+        assert!(md.contains("Sun"));
+        // Legend shows commit-count ranges (test data has max_count=0, so all show "0")
+        assert!(md.contains("\u{b7} 0"));
     }
 
     #[test]

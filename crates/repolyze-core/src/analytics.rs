@@ -36,16 +36,12 @@ pub fn build_users_contribution_rows(repos: &[RepositoryAnalysis]) -> Vec<UsersC
             } else {
                 0.0
             };
-            let most_active_week_day = most_active_index(&m.weekday_commits)
-                .map(|i| WEEKDAY_NAMES[i].to_string())
-                .unwrap_or_else(|| "N/A".to_string());
             UsersContributionRow {
                 email,
                 commits,
                 lines_modified,
                 lines_per_commit,
                 files_touched: m.files_touched,
-                most_active_week_day,
             }
         })
         .collect();
@@ -423,7 +419,6 @@ mod tests {
         assert_eq!(rows[0].commits, 5);
         assert_eq!(rows[0].lines_modified, 47); // 40 added + 7 deleted
         assert_eq!(rows[0].files_touched, 4);
-        assert_eq!(rows[0].most_active_week_day, "Monday");
     }
 
     #[test]

@@ -122,7 +122,6 @@ fn rf8_and_rf9_queries_return_snapshot_scoped_rows() {
     assert_eq!(rf9_rows.len(), 1);
     assert_eq!(rf8_rows[0].email, "alice@example.com");
     assert_eq!(rf9_rows[0].email, "alice@example.com");
-    assert_eq!(rf8_rows[0].most_active_week_day, "Wednesday");
     assert_eq!(rf9_rows[0].most_active_week_day, "Wednesday");
 }
 

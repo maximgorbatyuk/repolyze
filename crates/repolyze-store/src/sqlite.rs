@@ -384,7 +384,6 @@ impl SqliteStore {
                     lines_modified: row.lines_modified as i64,
                     lines_per_commit: row.lines_per_commit,
                     files_touched: row.files_touched as i64,
-                    most_active_week_day: row.most_active_week_day,
                 })
                 .collect(),
         )

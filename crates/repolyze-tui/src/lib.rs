@@ -22,7 +22,8 @@ use repolyze_core::service::analyze_targets_with_store;
 use repolyze_git::backend::GitCliBackend;
 use repolyze_metrics::FilesystemMetricsBackend;
 use repolyze_report::table::{
-    render_analysis_header, render_user_activity_table, render_users_contribution_table,
+    ACTIVITY_TITLE, USERS_CONTRIBUTION_TITLE, render_analysis_header, render_user_activity_table,
+    render_users_contribution_table,
 };
 
 use app::{AnalyzeView, AppAction, AppState};
@@ -46,7 +47,7 @@ pub fn run() -> anyhow::Result<()> {
     let mut bg_receiver: Option<mpsc::Receiver<AnalysisCompletion>> = None;
 
     loop {
-        terminal.draw(|frame| ui::draw(frame, &app))?;
+        terminal.draw(|frame| ui::draw(frame, &mut app))?;
 
         // Non-blocking poll: 100ms timeout allows spinner animation at ~10fps
         if poll_event(Duration::from_millis(100))?
@@ -167,8 +168,9 @@ where
         AnalyzeView::All => {
             let contrib_rows = build_users_contribution_rows(&report.repositories);
             let activity_rows = build_user_activity_rows(&report.repositories);
-            let mut combined = render_users_contribution_table(&contrib_rows);
-            combined.push_str("\n\n");
+            let mut combined = format!("#1 {USERS_CONTRIBUTION_TITLE}\n\n");
+            combined.push_str(&render_users_contribution_table(&contrib_rows));
+            combined.push_str(&format!("\n\n#2 {ACTIVITY_TITLE}\n\n"));
             combined.push_str(&render_user_activity_table(&activity_rows));
             let hm = build_heatmap_data(&report.repositories, None, &today);
             (combined, Some(hm))

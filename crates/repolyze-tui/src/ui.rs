@@ -35,7 +35,7 @@ const SLOGAN: &str = "Know your code better.";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const AUTHOR: &str = "maximgorbatyuk";
 
-pub fn draw(frame: &mut Frame, app: &AppState) {
+pub fn draw(frame: &mut Frame, app: &mut AppState) {
     let area = frame.area();
     match app.active_screen {
         Screen::Home => draw_home(frame, app, area),
@@ -208,7 +208,7 @@ fn draw_analyze_menu(frame: &mut Frame, app: &AppState, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-fn draw_analyze(frame: &mut Frame, app: &AppState, area: Rect) {
+fn draw_analyze(frame: &mut Frame, app: &mut AppState, area: Rect) {
     let view_label = match &app.selected_analyze_view {
         AnalyzeView::All => "All",
         AnalyzeView::UsersContribution => "Users contribution",
@@ -275,9 +275,18 @@ fn draw_analyze(frame: &mut Frame, app: &AppState, area: Rect) {
     }
 
     lines.push(Line::from(""));
-    lines.push(hints_line(&[("Esc", "Home"), ("Q", "Quit")]));
+    lines.push(hints_line(&[
+        ("\u{2191}\u{2193}", "Scroll"),
+        ("Esc", "Home"),
+        ("Q", "Quit"),
+    ]));
 
-    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    app.content_height = lines.len() as u16;
+    app.visible_height = area.height;
+
+    let paragraph = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .scroll((app.scroll_offset, 0));
     frame.render_widget(paragraph, area);
 }
 
@@ -301,6 +310,13 @@ fn heatmap_color(count: u32, max: u32) -> Color {
 fn heatmap_lines(data: &HeatmapData) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
     let cell = "\u{25a0} "; // ■ + space
+
+    // Period
+    lines.push(Line::from(Span::styled(
+        format!("      {} .. {}", data.start_date, data.end_date),
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
 
     // Month label row
     let label_width = 5; // "Mon  " etc.
@@ -336,18 +352,19 @@ fn heatmap_lines(data: &HeatmapData) -> Vec<Line<'static>> {
         lines.push(Line::from(spans));
     }
 
-    // Legend
+    // Legend with commit-count ranges
     lines.push(Line::from(""));
-    let legend_items = [
-        ("None", Color::DarkGray),
-        ("Low", Color::Rgb(0, 100, 100)),
-        ("Medium", Color::Cyan),
-        ("High", Color::LightCyan),
-        ("Maximum", Color::Yellow),
+    let labels = data.legend_labels();
+    let colors = [
+        Color::DarkGray,
+        Color::Rgb(0, 100, 100),
+        Color::Cyan,
+        Color::LightCyan,
+        Color::Yellow,
     ];
     let mut legend_spans: Vec<Span<'static>> = Vec::new();
     legend_spans.push(Span::raw("      "));
-    for (i, (label, color)) in legend_items.iter().enumerate() {
+    for (i, (label, color)) in labels.iter().zip(colors.iter()).enumerate() {
         if i > 0 {
             legend_spans.push(Span::raw("  "));
         }
