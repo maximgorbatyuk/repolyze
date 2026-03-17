@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-03-17
+
+### Added
+
+- **Activity heatmap**: GitHub-style contribution grid showing daily commit activity over the past 52 weeks. Available as a standalone TUI view, included in the Full report, and rendered in Markdown output using Unicode block characters (`·░▒▓█`). Color-coded legend shows concrete commit-count ranges computed from the data.
+- **Repository comparison report**: New "Compare repositories" view (5th TUI menu item, shown only for multi-repo workspaces). Renders three tables: top 3 most active repos by commits/day, top 3 least active, and per-weekday top 3 rankings. Included in Full report as section #4 when analyzing multiple repos.
+- **`commits_by_date` tracking**: New `BTreeMap<String, u32>` field on `ContributorActivityStats` counting commits per calendar date. Drives the heatmap grid and is serialized into the SQLite cache payload.
+- **`date_util` module** (`repolyze-core`): Date arithmetic without chrono — `parse_ymd`, `day_of_week` (Sakamoto), `add_days` (Julian Day Number), `format_ymd`, `month_abbrev`, `today_ymd`, `to_jdn`.
+- **Dynamic loading spinner**: TUI analysis runs on a background thread with animated braille spinner (`⠁⠉⠙⠸⠰⠴⠦⠇`). Event loop uses non-blocking `poll(100ms)` instead of blocking `read_event()`, keeping the UI responsive during analysis.
+- **Scrollable report view**: Analyze screen supports `j/k`/arrow key scrolling. `Paragraph` renders without wrapping for exact line-count height, fixing clipped content on long reports.
+- **Workspace probe on Analyze menu**: Shows current folder path and mode (single repository / multi-repository with repo count) before the view selection menu.
+- **Report headers with folder and mode**: Analysis header now includes `Folder:` and `Mode:` lines between `Projects:` and `Elapsed:`.
+- **Section headers and descriptions**: Each report section (Users contribution, Activity, Heatmap, Compare) includes a title and one-line description. Full report uses numbered headers (`#1`, `#2`, `#3`, `#4`).
+- **Heatmap period display**: Shows `YYYY-MM-DD .. YYYY-MM-DD` range above the heatmap grid in both TUI and Markdown.
+
+### Changed
+
+- **Activity table column abbreviations**: Headers shortened from `Avg commits/day (best day)` to `C/D (best)`, etc. Legend block explains each abbreviation. Reduces table width from ~120 to ~65 chars.
+- **"Most active week day" removed from Users contribution table**: Column dropped from model, renderer, store record, and all tests. The data remains available in the Activity table.
+- **Menu renamed**: "All (full report)" renamed to "Full report".
+- **Schema version bumped to 2**: Invalidates cached snapshots from v0.1.2, forcing re-analysis to populate `commits_by_date`.
+- **Compare repositories table format**: Uses project-standard `render_plain_table` with dash separators and right-aligned numbers instead of ad-hoc indented lists.
+
+### Fixed
+
+- **TUI wrapping caused clipped heatmap rows**: Removed `Paragraph::wrap()` from Analyze screen. Fixed-width content (tables, heatmap) now clips at terminal edge instead of wrapping into garbled multi-line rows.
+- **Scroll clamping was byte-based**: Previous height estimation counted UTF-8 bytes instead of display columns, causing scroll to stop before the bottom of the report.
+- **Store open failure path**: `compute_analysis` returns a proper error message instead of encoding error state as a `failure_count` hack.
+
+### Infrastructure
+
+- `HeatmapData` type with `legend_labels()` method for computing commit-count ranges from `max_count`
+- `RepoComparisonRow` type and `build_repo_comparison()` builder in `repolyze-core::analytics`
+- `render_repo_comparison_table()` and `render_heatmap_section()` in `repolyze-report`
+- `WorkspaceInfo` struct and `ProbeWorkspace` action in TUI app state
+- `AnalysisCompletion` struct for background thread communication via `mpsc::channel`
+- Constants `HEATMAP_MAX_WEEKS`, `DAYS_IN_WEEK` replace magic numbers in grid dimensions
+- `to_jdn` deduplicated from analytics into `date_util` as single public function
+
 ## [0.1.2] - 2026-03-15
 
 ### Added

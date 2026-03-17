@@ -478,7 +478,7 @@
           <div class="feature-card animate-on-scroll">
             <div class="feature-icon" aria-hidden="true">[##]</div>
             <h3>Analytics Views</h3>
-            <p>Per-contributor tables: commits, lines modified, files touched, most active days and hours.</p>
+            <p>Per-contributor tables with commit frequency by weekday and hour. Abbreviated column headers with legend.</p>
           </div>
           <div class="feature-card animate-on-scroll">
             <div class="feature-icon" aria-hidden="true">[db]</div>
@@ -493,7 +493,17 @@
           <div class="feature-card animate-on-scroll">
             <div class="feature-icon" aria-hidden="true">[TUI]</div>
             <h3>Interactive TUI</h3>
-            <p>Full-screen terminal UI with navigate-and-analyze workflow. No browser needed.</p>
+            <p>Full-screen terminal UI with scrollable reports, background analysis, and animated loading spinner.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon" aria-hidden="true">[:::.]</div>
+            <h3>Activity Heatmap</h3>
+            <p>GitHub-style contribution grid showing daily commit intensity over the past year with color-coded legend.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon" aria-hidden="true">[&lt;&gt;]</div>
+            <h3>Repo Comparison</h3>
+            <p>Side-by-side ranking of repositories by commits per day, with per-weekday breakdowns and top 3 lists.</p>
           </div>
         </div>
       </div>
@@ -519,7 +529,7 @@
 
 <span class="comment"># Verify installation</span>
 <span class="prompt">$</span> repolyze <span class="flag">--version</span>
-repolyze 0.1.1</pre>
+repolyze 0.1.3</pre>
               </div>
             </div>
           </div>
@@ -537,7 +547,7 @@ repolyze 0.1.1</pre>
 
 <span class="comment"># Verify installation</span>
 <span class="prompt">$</span> repolyze <span class="flag">--version</span>
-repolyze 0.1.1</pre>
+repolyze 0.1.3</pre>
               </div>
             </div>
           </div>
@@ -601,25 +611,48 @@ repolyze 0.1.1</pre>
                 <span class="terminal-title">~/projects/my-app</span>
               </div>
               <div class="terminal-body">
-<pre><span class="prompt">$</span> repolyze analyze
+<pre><span class="prompt">$</span> repolyze analyze users-contribution <span class="flag">--format</span> table
 Period:    2026-03-10 16:07:16 .. 2026-03-14 15:04:17
 Projects:  1 repository
+Folder:    /Users/dev/projects/my-app
+Mode:      Single repository
 Elapsed:   0.024s
 
-Email                        Commits  Lines Modified  Lines per commit  Files Touched  Most active week day
----------------------------  -------  --------------  ----------------  -------------  --------------------
-nikita@bayev.kz                   51           12877            252.49             32  Tuesday
-maxim.gorbatyuk@outlook.com        2            1724            862.00              9  Saturday
-keksonoid98@gmail.com              1            1427           1427.00             10  Friday
----------------------------  -------  --------------  ----------------  -------------  --------------------
-Total                             54           16028            296.81             51
+Per-contributor commit counts, lines modified, and files touched.
 
+Email                        Commits  Lines Modified  Lines per commit  Files Touched
+---------------------------  -------  --------------  ----------------  -------------
+nikita@bayev.kz                   51           12877            252.49             32
+maxim.gorbatyuk@outlook.com        2            1724            862.00              9
+keksonoid98@gmail.com              1            1427           1427.00             10
+---------------------------  -------  --------------  ----------------  -------------
+Total                             54           16028            296.81             51</pre>
+              </div>
+            </div>
+          </div>
 
-Email                        Most active week day  Avg commits/day (best day)  Avg commits/day  Avg commits/hour (best hour)  Avg commits/hour
----------------------------  --------------------  --------------------------  ---------------  ----------------------------  ----------------
-nikita@bayev.kz              Tuesday                                    30.00            12.75                         15.00              3.40
-maxim.gorbatyuk@outlook.com  Saturday                                    1.00             1.00                          1.00              1.00
-keksonoid98@gmail.com        Friday                                      1.00             1.00                          1.00              1.00</pre>
+          <div>
+            <p class="usage-label">Activity heatmap (TUI view)</p>
+            <div class="terminal-window animate-on-scroll">
+              <div class="terminal-header" aria-hidden="true">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="terminal-title">repolyze TUI</span>
+              </div>
+              <div class="terminal-body">
+<pre>Daily commit activity over the past year, grouped by week.
+
+      2025-03-17 .. 2026-03-17
+
+     Mar       Apr       May       Jun       Jul  ...
+Mon  <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#0cc">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#0cc">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#eab308">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#0cc">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> ...
+     <span style="color:#555">&#x25a0;</span> <span style="color:#0cc">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#0cc">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#eab308">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> ...
+Wed  <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#0cc">&#x25a0;</span> <span style="color:#eab308">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#0cc">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> ...
+     <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#0cc">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> ...
+Fri  <span style="color:#0cc">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#0cc">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#eab308">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> <span style="color:#555">&#x25a0;</span> ...
+
+      <span style="color:#555">&#x25a0;</span> 0  <span style="color:#006464">&#x25a0;</span> 1-3  <span style="color:#0cc">&#x25a0;</span> 4-6  <span style="color:#7dd">&#x25a0;</span> 7-9  <span style="color:#eab308">&#x25a0;</span> 10-12</pre>
               </div>
             </div>
           </div>
@@ -675,26 +708,23 @@ keksonoid98@gmail.com        Friday                                      1.00   
             <span class="terminal-title">~/projects/my-app</span>
           </div>
           <div class="terminal-body">
-<pre><span class="prompt">$</span> repolyze analyze
+<pre><span class="prompt">$</span> repolyze analyze users-contribution <span class="flag">--format</span> table
 
 Period:    2026-03-10 16:07:16 .. 2026-03-14 15:04:17
 Projects:  1 repository
+Folder:    /Users/dev/projects/my-app
+Mode:      Single repository
 Elapsed:   0.024s
 
-Email                        Commits  Lines Modified  Lines per commit  Files Touched  Most active week day
----------------------------  -------  --------------  ----------------  -------------  --------------------
-nikita@bayev.kz                   51           12877            252.49             32  Tuesday
-maxim.gorbatyuk@outlook.com        2            1724            862.00              9  Saturday
-keksonoid98@gmail.com              1            1427           1427.00             10  Friday
----------------------------  -------  --------------  ----------------  -------------  --------------------
-Total                             54           16028            296.81             51
+Per-contributor commit counts, lines modified, and files touched.
 
-
-Email                        Most active week day  Avg commits/day (best day)  Avg commits/day  Avg commits/hour (best hour)  Avg commits/hour
----------------------------  --------------------  --------------------------  ---------------  ----------------------------  ----------------
-nikita@bayev.kz              Tuesday                                    30.00            12.75                         15.00              3.40
-maxim.gorbatyuk@outlook.com  Saturday                                    1.00             1.00                          1.00              1.00
-keksonoid98@gmail.com        Friday                                      1.00             1.00                          1.00              1.00</pre>
+Email                        Commits  Lines Modified  Lines per commit  Files Touched
+---------------------------  -------  --------------  ----------------  -------------
+nikita@bayev.kz                   51           12877            252.49             32
+maxim.gorbatyuk@outlook.com        2            1724            862.00              9
+keksonoid98@gmail.com              1            1427           1427.00             10
+---------------------------  -------  --------------  ----------------  -------------
+Total                             54           16028            296.81             51</pre>
           </div>
         </div>
         <p style="text-align:center;margin-top:16px;"><a href="https://github.com/maximgorbatyuk/repolyze" target="_blank" rel="noopener" style="color:var(--accent-blue);text-decoration:none;font-size:0.85rem;">Star on GitHub &rarr;</a></p>
@@ -706,7 +736,7 @@ keksonoid98@gmail.com        Friday                                      1.00   
   <!-- Footer -->
   <footer>
     <div class="container">
-      <p>Repolyze v0.1.1 &middot; MIT License</p>
+      <p>Repolyze v0.1.3 &middot; MIT License</p>
       <p><a href="https://github.com/maximgorbatyuk/repolyze" target="_blank" rel="noopener">github.com/maximgorbatyuk/repolyze</a></p>
       <p>Author: <a href="https://github.com/maximgorbatyuk" target="_blank" rel="noopener">maximgorbatyuk</a></p>
       <p class="footer-privacy">Built with Rust. Analyzed locally. No data leaves your machine.</p>

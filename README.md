@@ -7,7 +7,10 @@ The initial product scope focuses on:
 
 - user contribution statistics from Git history
 - most active hours and days based on commit activity
+- GitHub-style activity heatmap showing daily commits over the past year
+- multi-repository comparison with per-repo and per-weekday rankings
 - language-agnostic repository size comparison
+- scrollable full-screen TUI with background analysis and animated spinner
 - JSON and Markdown report output
 
 ## Installation
