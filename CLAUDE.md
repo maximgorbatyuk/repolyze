@@ -12,10 +12,10 @@ Rust workspace with one binary crate and multiple library crates:
 
 - **repolyze-cli** — Binary entrypoint, `clap` command parsing, launches TUI or runs subcommands
 - **repolyze-tui** — TUI app state, event loop, rendering (thin presentation layer, no domain logic)
-- **repolyze-core** — Shared domain types (`AnalysisRequest`, `RepositoryTarget`, `RepositoryAnalysis`), service traits (`GitAnalyzer`, `MetricsAnalyzer`), input validation, error types, aggregation
+- **repolyze-core** — Shared domain types (`AnalysisRequest`, `RepositoryTarget`, `RepositoryAnalysis`, `HeatmapData`), service traits (`GitAnalyzer`, `MetricsAnalyzer`), input validation, error types, aggregation, analytics builders (contribution rows, activity rows, heatmap, repo comparison), `date_util` module (date arithmetic without chrono)
 - **repolyze-git** — Git subprocess backend, commit history parsing, contribution stats, activity summaries
 - **repolyze-metrics** — `.gitignore`-aware repo walking, file/line/byte counting, extension breakdowns
-- **repolyze-report** — JSON and Markdown report rendering (aggregates contributors/activity across repos)
+- **repolyze-report** — JSON, Markdown, and plain-text table report rendering. Table renderer (`table.rs`) provides `render_plain_table` and specialized functions for contribution, activity, heatmap, and repo comparison output
 - **repolyze-store** — SQLite cache (`rusqlite`), database bootstrap, migrations, snapshot read/write queries
 - **xtask** — Developer automation (verification, release helpers)
 
@@ -47,6 +47,8 @@ repolyze analyze                         # analyze current directory, JSON to st
 repolyze analyze -D /path/to/repo        # analyze a specific directory
 repolyze analyze --repo ./a --repo ./b   # analyze specific repos
 repolyze analyze --format md --output report.md  # Markdown to file
+repolyze analyze users-contribution --format table  # contribution table to stdout
+repolyze analyze activity --format table            # activity table to stdout
 repolyze compare --repo ./a --repo ./b   # compare multiple repos
 ```
 
@@ -75,8 +77,10 @@ Release artifacts are built by GitHub Actions on version tags via `cargo-dist`. 
 - Local filesystem analysis only — no remote GitHub/GitLab
 - Batch analysis tolerates partial failures (one bad repo doesn't abort the run)
 - TUI is a thin presentation layer — widgets never compute Git or filesystem metrics directly
+- TUI analysis runs on a background thread via `mpsc::channel`; the event loop uses `poll(100ms)` for non-blocking input
 - Git analysis uses subprocess calls (`git log`, `git rev-list`), not libgit2
 - Tests use deterministic fixture repos with fixed timestamps and known authors, not the project's own Git history
+- When adding/changing fields in serialized model types (e.g. `ContributorActivityStats`), bump `SCHEMA_VERSION` in `repolyze-store/src/migrations.rs` to invalidate stale cached snapshots
 
 ## Testing
 
@@ -99,6 +103,8 @@ All plain-text tables (CLI and TUI) must follow this format. Renderer: `crates/r
 ```
 Period:    2024-03-01 .. 2025-03-15
 Projects:  2 repositories
+Folder:    /Users/dev/projects
+Mode:      Multi-repository
 Elapsed:   1.234s
 
 Column A           Column B  Column C
@@ -114,8 +120,8 @@ Rules:
 - Header row is always left-aligned
 - Numeric columns are right-aligned
 - Dash separator after header and before totals row
-- Totals row only on RF-8 (Users contribution) table
-- Summary header (period, project count, elapsed) precedes every table output
+- Totals row only on Users contribution table
+- Summary header (period, project count, folder, mode, elapsed) precedes every table output
 
 ## Rust 2024 Edition Gotchas
 
