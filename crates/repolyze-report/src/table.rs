@@ -192,7 +192,6 @@ pub fn render_repo_comparison_table(rows: &[RepoComparisonRow]) -> String {
 
     let mut out = format!("{COMPARE_REPOS_DESC}\n\n");
 
-    // Section 1: Top 3 most active
     let mut by_cpd: Vec<&RepoComparisonRow> = rows.iter().collect();
     by_cpd.sort_by(|a, b| {
         b.commits_per_day
@@ -200,53 +199,70 @@ pub fn render_repo_comparison_table(rows: &[RepoComparisonRow]) -> String {
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    out.push_str("Most active repositories (commits per active day):\n");
-    let name_width = rows.iter().map(|r| r.name.len()).max().unwrap_or(10);
-    for row in by_cpd.iter().take(3) {
-        out.push_str(&format!(
-            "  {:<width$}  {:.2}\n",
-            row.name,
-            row.commits_per_day,
-            width = name_width
-        ));
-    }
+    let headers = &["Repository", "Commits", "Active days", "C/D"];
+    let right_align = &[false, true, true, true];
+
+    // Section 1: Top 3 most active
+    let top3: Vec<Vec<String>> = by_cpd.iter().take(3).map(|r| repo_row(r)).collect();
+
+    out.push_str("Most active repositories (commits per active day):\n\n");
+    out.push_str(&render_plain_table(headers, &top3, right_align, None));
     out.push('\n');
 
     // Section 2: Top 3 least active
-    out.push_str("Least active repositories (commits per active day):\n");
-    for row in by_cpd.iter().rev().take(3) {
-        out.push_str(&format!(
-            "  {:<width$}  {:.2}\n",
-            row.name,
-            row.commits_per_day,
-            width = name_width
-        ));
-    }
+    let bottom3: Vec<Vec<String>> = by_cpd.iter().rev().take(3).map(|r| repo_row(r)).collect();
+
+    out.push_str("Least active repositories (commits per active day):\n\n");
+    out.push_str(&render_plain_table(headers, &bottom3, right_align, None));
     out.push('\n');
 
     // Section 3: Top 3 per weekday
-    out.push_str("Most active repositories by weekday:\n");
-    for (day, day_name) in WEEKDAY_NAMES_SHORT.iter().enumerate() {
-        let mut day_sorted: Vec<&RepoComparisonRow> = rows.iter().collect();
-        day_sorted.sort_by(|a, b| {
-            b.weekday_commits_per_day[day]
-                .partial_cmp(&a.weekday_commits_per_day[day])
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+    let wd_headers = &["Weekday", "#1", "#2", "#3"];
+    let wd_align = &[false, false, false, false];
 
-        let top3: Vec<String> = day_sorted
-            .iter()
-            .take(3)
-            .filter(|r| r.weekday_commits_per_day[day] > 0.0)
-            .map(|r| format!("{} ({:.2})", r.name, r.weekday_commits_per_day[day]))
-            .collect();
+    let wd_data: Vec<Vec<String>> = WEEKDAY_NAMES_SHORT
+        .iter()
+        .enumerate()
+        .filter_map(|(day, day_name)| {
+            let mut day_sorted: Vec<&RepoComparisonRow> = rows.iter().collect();
+            day_sorted.sort_by(|a, b| {
+                b.weekday_commits_per_day[day]
+                    .partial_cmp(&a.weekday_commits_per_day[day])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
 
-        if !top3.is_empty() {
-            out.push_str(&format!("  {day_name:<5} {}\n", top3.join("  ")));
-        }
-    }
+            let entries: Vec<String> = day_sorted
+                .iter()
+                .take(3)
+                .filter(|r| r.weekday_commits_per_day[day] > 0.0)
+                .map(|r| format!("{} ({:.2})", r.name, r.weekday_commits_per_day[day]))
+                .collect();
+
+            if entries.is_empty() {
+                return None;
+            }
+
+            let mut row = vec![day_name.to_string()];
+            for i in 0..3 {
+                row.push(entries.get(i).cloned().unwrap_or_default());
+            }
+            Some(row)
+        })
+        .collect();
+
+    out.push_str("Most active repositories by weekday (C/D):\n\n");
+    out.push_str(&render_plain_table(wd_headers, &wd_data, wd_align, None));
 
     out
+}
+
+fn repo_row(r: &RepoComparisonRow) -> Vec<String> {
+    vec![
+        r.name.clone(),
+        r.total_commits.to_string(),
+        r.active_days.to_string(),
+        format!("{:.2}", r.commits_per_day),
+    ]
 }
 
 fn render_plain_table(

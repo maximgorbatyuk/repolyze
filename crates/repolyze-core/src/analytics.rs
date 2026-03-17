@@ -217,8 +217,9 @@ pub fn build_repo_comparison(repos: &[RepositoryAnalysis]) -> Vec<RepoComparison
             let mut weekday_dates: [BTreeSet<String>; 7] = std::array::from_fn(|_| BTreeSet::new());
             for act in &repo.contributions.activity_by_contributor {
                 all_dates.extend(act.active_dates.iter().cloned());
-                for (wd_set, act_set) in
-                    weekday_dates.iter_mut().zip(act.active_dates_by_weekday.iter())
+                for (wd_set, act_set) in weekday_dates
+                    .iter_mut()
+                    .zip(act.active_dates_by_weekday.iter())
                 {
                     wd_set.extend(act_set.iter().cloned());
                 }
