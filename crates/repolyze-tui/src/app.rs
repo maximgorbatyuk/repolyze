@@ -18,13 +18,15 @@ pub enum AnalyzeView {
     UsersContribution,
     Activity,
     ActivityHeatmap,
+    CompareRepos,
 }
 
-pub const ANALYZE_MENU_ITEMS: [(&str, AnalyzeView); 4] = [
+pub const ANALYZE_MENU_ITEMS: [(&str, AnalyzeView); 5] = [
     ("Full report", AnalyzeView::All),
     ("Users contribution", AnalyzeView::UsersContribution),
     ("Most active days and hours", AnalyzeView::Activity),
     ("Activity heatmap", AnalyzeView::ActivityHeatmap),
+    ("Compare repositories", AnalyzeView::CompareRepos),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +64,13 @@ impl fmt::Display for MenuItem {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct WorkspaceInfo {
+    pub folder: String,
+    pub is_single_repo: bool,
+    pub repo_count: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppAction {
     StartAnalyze {
@@ -69,6 +78,7 @@ pub enum AppAction {
         view: AnalyzeView,
     },
     LoadMetadata,
+    ProbeWorkspace,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +98,7 @@ pub struct AppState {
     pub analysis_table: Option<String>,
     pub heatmap_data: Option<HeatmapData>,
     pub metadata_text: Option<String>,
+    pub workspace_info: Option<WorkspaceInfo>,
     pub is_loading: bool,
     pub spinner_frame: usize,
     pub scroll_offset: u16,
@@ -119,6 +130,7 @@ impl AppState {
             analysis_table: None,
             heatmap_data: None,
             metadata_text: None,
+            workspace_info: None,
             is_loading: false,
             spinner_frame: 0,
             scroll_offset: 0,
@@ -142,8 +154,14 @@ impl AppState {
     pub fn activate_selected(&mut self) {
         if let Some(item) = self.menu_items.get(self.selected) {
             let screen = item.screen();
-            if screen == Screen::Metadata {
-                self.pending_action = Some(AppAction::LoadMetadata);
+            match screen {
+                Screen::Metadata => {
+                    self.pending_action = Some(AppAction::LoadMetadata);
+                }
+                Screen::AnalyzeMenu => {
+                    self.pending_action = Some(AppAction::ProbeWorkspace);
+                }
+                _ => {}
             }
             self.active_screen = screen;
         }
@@ -155,6 +173,7 @@ impl AppState {
         self.input_paths.clear();
         self.heatmap_data = None;
         self.metadata_text = None;
+        self.workspace_info = None;
         self.is_loading = false;
         self.spinner_frame = 0;
         self.scroll_offset = 0;
@@ -191,6 +210,18 @@ impl AppState {
         }
     }
 
+    pub fn effective_menu_len(&self) -> usize {
+        let is_multi = self
+            .workspace_info
+            .as_ref()
+            .is_some_and(|w| !w.is_single_repo && w.repo_count > 1);
+        if is_multi {
+            ANALYZE_MENU_ITEMS.len()
+        } else {
+            ANALYZE_MENU_ITEMS.len() - 1
+        }
+    }
+
     pub fn analyze_menu_up(&mut self) {
         if self.analyze_menu_selected > 0 {
             self.analyze_menu_selected -= 1;
@@ -198,7 +229,7 @@ impl AppState {
     }
 
     pub fn analyze_menu_down(&mut self) {
-        if self.analyze_menu_selected + 1 < ANALYZE_MENU_ITEMS.len() {
+        if self.analyze_menu_selected + 1 < self.effective_menu_len() {
             self.analyze_menu_selected += 1;
         }
     }

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use repolyze_core::analytics::RepoComparisonRow;
 use repolyze_core::model::{RepositoryAnalysis, UserActivityRow, UsersContributionRow};
 
 pub const USERS_CONTRIBUTION_TITLE: &str = "Users contribution";
@@ -12,6 +13,10 @@ pub const ACTIVITY_DESC: &str =
 
 pub const HEATMAP_TITLE: &str = "Activity heatmap";
 pub const HEATMAP_DESC: &str = "Daily commit activity over the past year, grouped by week.";
+
+pub const COMPARE_REPOS_TITLE: &str = "Compare repositories";
+pub const COMPARE_REPOS_DESC: &str =
+    "Side-by-side comparison of repository activity and commit frequency.";
 
 /// Build a summary header showing period, repo count, and elapsed time.
 pub fn render_analysis_header(repos: &[RepositoryAnalysis], elapsed: Duration) -> String {
@@ -176,6 +181,72 @@ pub fn render_user_activity_table(rows: &[UserActivityRow]) -> String {
         "{legend}{}",
         render_plain_table(headers, &data, right_align, None)
     )
+}
+
+const WEEKDAY_NAMES_SHORT: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+pub fn render_repo_comparison_table(rows: &[RepoComparisonRow]) -> String {
+    if rows.len() < 2 {
+        return String::new();
+    }
+
+    let mut out = format!("{COMPARE_REPOS_DESC}\n\n");
+
+    // Section 1: Top 3 most active
+    let mut by_cpd: Vec<&RepoComparisonRow> = rows.iter().collect();
+    by_cpd.sort_by(|a, b| {
+        b.commits_per_day
+            .partial_cmp(&a.commits_per_day)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    out.push_str("Most active repositories (commits per active day):\n");
+    let name_width = rows.iter().map(|r| r.name.len()).max().unwrap_or(10);
+    for row in by_cpd.iter().take(3) {
+        out.push_str(&format!(
+            "  {:<width$}  {:.2}\n",
+            row.name,
+            row.commits_per_day,
+            width = name_width
+        ));
+    }
+    out.push('\n');
+
+    // Section 2: Top 3 least active
+    out.push_str("Least active repositories (commits per active day):\n");
+    for row in by_cpd.iter().rev().take(3) {
+        out.push_str(&format!(
+            "  {:<width$}  {:.2}\n",
+            row.name,
+            row.commits_per_day,
+            width = name_width
+        ));
+    }
+    out.push('\n');
+
+    // Section 3: Top 3 per weekday
+    out.push_str("Most active repositories by weekday:\n");
+    for (day, day_name) in WEEKDAY_NAMES_SHORT.iter().enumerate() {
+        let mut day_sorted: Vec<&RepoComparisonRow> = rows.iter().collect();
+        day_sorted.sort_by(|a, b| {
+            b.weekday_commits_per_day[day]
+                .partial_cmp(&a.weekday_commits_per_day[day])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let top3: Vec<String> = day_sorted
+            .iter()
+            .take(3)
+            .filter(|r| r.weekday_commits_per_day[day] > 0.0)
+            .map(|r| format!("{} ({:.2})", r.name, r.weekday_commits_per_day[day]))
+            .collect();
+
+        if !top3.is_empty() {
+            out.push_str(&format!("  {day_name:<5} {}\n", top3.join("  ")));
+        }
+    }
+
+    out
 }
 
 fn render_plain_table(

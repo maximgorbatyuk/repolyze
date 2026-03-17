@@ -179,7 +179,28 @@ fn draw_analyze_menu(frame: &mut Frame, app: &AppState, area: Rect) {
         Line::from(""),
     ];
 
-    for (i, (label, _)) in ANALYZE_MENU_ITEMS.iter().enumerate() {
+    // Workspace info
+    if let Some(info) = &app.workspace_info {
+        lines.push(Line::from(vec![
+            Span::styled("   Folder:  ", Style::default().fg(Color::DarkGray)),
+            Span::raw(&info.folder),
+        ]));
+        let mode = if info.is_single_repo {
+            "Single repository".to_string()
+        } else if info.repo_count > 0 {
+            format!("Multi-repository ({} repos)", info.repo_count)
+        } else {
+            "No repositories found".to_string()
+        };
+        lines.push(Line::from(vec![
+            Span::styled("   Mode:    ", Style::default().fg(Color::DarkGray)),
+            Span::raw(mode),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    let menu_len = app.effective_menu_len();
+    for (i, (label, _)) in ANALYZE_MENU_ITEMS.iter().enumerate().take(menu_len) {
         let is_selected = i == app.analyze_menu_selected;
         let (prefix, style) = if is_selected {
             (
@@ -215,6 +236,7 @@ fn draw_analyze(frame: &mut Frame, app: &mut AppState, area: Rect) {
         AnalyzeView::UsersContribution => "Users contribution",
         AnalyzeView::Activity => "Most active days and hours",
         AnalyzeView::ActivityHeatmap => "Activity heatmap",
+        AnalyzeView::CompareRepos => "Compare repositories",
     };
 
     let mut lines = vec![

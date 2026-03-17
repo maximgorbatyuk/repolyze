@@ -192,6 +192,66 @@ fn merge_activity_by_email(repos: &[RepositoryAnalysis]) -> HashMap<String, Merg
     map
 }
 
+#[derive(Debug, Clone)]
+pub struct RepoComparisonRow {
+    pub name: String,
+    pub total_commits: u64,
+    pub active_days: usize,
+    pub commits_per_day: f64,
+    pub weekday_commits_per_day: [f64; 7],
+}
+
+pub fn build_repo_comparison(repos: &[RepositoryAnalysis]) -> Vec<RepoComparisonRow> {
+    repos
+        .iter()
+        .map(|repo| {
+            let name = repo
+                .repository
+                .root
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| repo.repository.root.to_string_lossy().to_string());
+
+            // Union active_dates across all contributors for repo-wide active days
+            let mut all_dates: BTreeSet<String> = BTreeSet::new();
+            let mut weekday_dates: [BTreeSet<String>; 7] = std::array::from_fn(|_| BTreeSet::new());
+            for act in &repo.contributions.activity_by_contributor {
+                all_dates.extend(act.active_dates.iter().cloned());
+                for (wd_set, act_set) in
+                    weekday_dates.iter_mut().zip(act.active_dates_by_weekday.iter())
+                {
+                    wd_set.extend(act_set.iter().cloned());
+                }
+            }
+
+            let active_days = all_dates.len();
+            let total_commits = repo.contributions.total_commits;
+            let commits_per_day = if active_days > 0 {
+                total_commits as f64 / active_days as f64
+            } else {
+                0.0
+            };
+
+            let mut weekday_commits_per_day = [0.0f64; 7];
+            for i in 0..7 {
+                let wd_days = weekday_dates[i].len();
+                if wd_days > 0 {
+                    weekday_commits_per_day[i] =
+                        repo.activity.by_weekday[i] as f64 / wd_days as f64;
+                }
+            }
+
+            RepoComparisonRow {
+                name,
+                total_commits,
+                active_days,
+                commits_per_day,
+                weekday_commits_per_day,
+            }
+        })
+        .collect()
+}
+
 pub fn build_heatmap_data(
     repos: &[RepositoryAnalysis],
     email_filter: Option<&str>,
@@ -579,5 +639,23 @@ mod tests {
         for day in 3..7 {
             assert_eq!(data.grid[day][last_week], 0);
         }
+    }
+
+    #[test]
+    fn build_repo_comparison_computes_commits_per_day() {
+        // repo-a: 3 commits on 2 active dates → 1.5 cpd
+        // repo-b: 2 commits on 2 active dates → 1.0 cpd
+        let repos = make_report_with_shared_contributor();
+        let rows = build_repo_comparison(&repos);
+
+        assert_eq!(rows.len(), 2);
+        let a = rows.iter().find(|r| r.name == "repo-a").unwrap();
+        let b = rows.iter().find(|r| r.name == "repo-b").unwrap();
+        assert_eq!(a.total_commits, 3);
+        assert_eq!(a.active_days, 2);
+        assert!((a.commits_per_day - 1.5).abs() < 0.01);
+        assert_eq!(b.total_commits, 2);
+        assert_eq!(b.active_days, 2);
+        assert!((b.commits_per_day - 1.0).abs() < 0.01);
     }
 }

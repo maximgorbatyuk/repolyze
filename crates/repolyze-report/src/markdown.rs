@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use repolyze_core::analytics::build_heatmap_data;
+use repolyze_core::analytics::{build_heatmap_data, build_repo_comparison};
 use repolyze_core::date_util;
 use repolyze_core::model::{ComparisonReport, ContributorStats, HeatmapData};
 
@@ -149,6 +149,16 @@ pub fn render_markdown(report: &ComparisonReport) -> String {
         ));
     }
     out.push('\n');
+
+    // Repository comparison (multi-repo only)
+    if report.repositories.len() > 1 {
+        let comparison = build_repo_comparison(&report.repositories);
+        if comparison.len() >= 2 {
+            out.push_str("## Compare Repositories\n\n");
+            out.push_str(&crate::table::render_repo_comparison_table(&comparison));
+            out.push('\n');
+        }
+    }
 
     // Activity heatmap
     let today = date_util::today_ymd();

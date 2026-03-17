@@ -14,16 +14,17 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use repolyze_core::analytics::{
-    build_heatmap_data, build_user_activity_rows, build_users_contribution_rows,
+    build_heatmap_data, build_repo_comparison, build_user_activity_rows,
+    build_users_contribution_rows,
 };
-use repolyze_core::input::resolve_inputs_with_failures;
+use repolyze_core::input::{resolve_input, resolve_inputs_with_failures};
 use repolyze_core::model::{ComparisonReport, HeatmapData};
 use repolyze_core::service::analyze_targets_with_store;
 use repolyze_git::backend::GitCliBackend;
 use repolyze_metrics::FilesystemMetricsBackend;
 use repolyze_report::table::{
-    ACTIVITY_TITLE, USERS_CONTRIBUTION_TITLE, render_analysis_header, render_user_activity_table,
-    render_users_contribution_table,
+    ACTIVITY_TITLE, COMPARE_REPOS_TITLE, USERS_CONTRIBUTION_TITLE, render_analysis_header,
+    render_repo_comparison_table, render_user_activity_table, render_users_contribution_table,
 };
 
 use app::{AnalyzeView, AppAction, AppState};
@@ -76,6 +77,9 @@ pub fn run() -> anyhow::Result<()> {
                 }
                 AppAction::LoadMetadata => {
                     app.metadata_text = Some(build_metadata_text(&open_store));
+                }
+                AppAction::ProbeWorkspace => {
+                    app.workspace_info = Some(probe_workspace());
                 }
             }
         }
@@ -165,6 +169,10 @@ where
             let hm = build_heatmap_data(&report.repositories, None, &today);
             (String::new(), Some(hm))
         }
+        AnalyzeView::CompareRepos => {
+            let comparison = build_repo_comparison(&report.repositories);
+            (render_repo_comparison_table(&comparison), None)
+        }
         AnalyzeView::All => {
             let contrib_rows = build_users_contribution_rows(&report.repositories);
             let activity_rows = build_user_activity_rows(&report.repositories);
@@ -172,6 +180,15 @@ where
             combined.push_str(&render_users_contribution_table(&contrib_rows));
             combined.push_str(&format!("\n\n#2 {ACTIVITY_TITLE}\n\n"));
             combined.push_str(&render_user_activity_table(&activity_rows));
+            // Include repo comparison if multi-repo
+            if report.repositories.len() > 1 {
+                let comparison = build_repo_comparison(&report.repositories);
+                let table = render_repo_comparison_table(&comparison);
+                if !table.is_empty() {
+                    combined.push_str(&format!("\n\n#4 {COMPARE_REPOS_TITLE}\n\n"));
+                    combined.push_str(&table);
+                }
+            }
             let hm = build_heatmap_data(&report.repositories, None, &today);
             (combined, Some(hm))
         }
@@ -230,6 +247,9 @@ where
         }
         AppAction::LoadMetadata => {
             app.metadata_text = Some(build_metadata_text(&open_store_fn));
+        }
+        AppAction::ProbeWorkspace => {
+            app.workspace_info = Some(probe_workspace());
         }
     }
 
@@ -369,6 +389,29 @@ fn format_file_size(bytes: u64) -> String {
         format!("{:.1} KB", bytes as f64 / 1024.0)
     } else {
         format!("{bytes} B")
+    }
+}
+
+fn probe_workspace() -> app::WorkspaceInfo {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let folder = cwd.to_string_lossy().to_string();
+
+    match resolve_input(&cwd) {
+        Ok(targets) => {
+            let repo_count = targets.len();
+            let is_single_repo = repo_count == 1
+                && targets[0].root == cwd.canonicalize().unwrap_or_else(|_| cwd.clone());
+            app::WorkspaceInfo {
+                folder,
+                is_single_repo,
+                repo_count,
+            }
+        }
+        Err(_) => app::WorkspaceInfo {
+            folder,
+            is_single_repo: false,
+            repo_count: 0,
+        },
     }
 }
 
