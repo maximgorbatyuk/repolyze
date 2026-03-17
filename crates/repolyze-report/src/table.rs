@@ -132,7 +132,12 @@ pub fn render_users_contribution_table(rows: &[UsersContributionRow]) -> String 
         total_files.to_string(),
     ];
 
-    out.push_str(&render_plain_table(headers, &data, right_align, Some(&totals)));
+    out.push_str(&render_plain_table(
+        headers,
+        &data,
+        right_align,
+        Some(&totals),
+    ));
     out
 }
 

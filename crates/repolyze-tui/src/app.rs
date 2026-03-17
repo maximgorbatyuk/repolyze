@@ -21,7 +21,7 @@ pub enum AnalyzeView {
 }
 
 pub const ANALYZE_MENU_ITEMS: [(&str, AnalyzeView); 4] = [
-    ("All (full report)", AnalyzeView::All),
+    ("Full report", AnalyzeView::All),
     ("Users contribution", AnalyzeView::UsersContribution),
     ("Most active days and hours", AnalyzeView::Activity),
     ("Activity heatmap", AnalyzeView::ActivityHeatmap),

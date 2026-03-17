@@ -7,6 +7,7 @@ use ratatui::{
 };
 
 use repolyze_core::model::HeatmapData;
+use repolyze_report::table::{HEATMAP_DESC, HEATMAP_TITLE};
 
 use crate::app::{ANALYZE_MENU_ITEMS, AnalyzeView, AppState, Screen};
 
@@ -243,6 +244,11 @@ fn draw_analyze(frame: &mut Frame, app: &mut AppState, area: Rect) {
         // Append heatmap if present
         if let Some(data) = &app.heatmap_data {
             lines.push(Line::from(""));
+            if app.selected_analyze_view == AnalyzeView::All {
+                lines.push(Line::from(format!(" #3 {HEATMAP_TITLE}")));
+            }
+            lines.push(Line::from(format!(" {HEATMAP_DESC}")));
+            lines.push(Line::from(""));
             lines.extend(heatmap_lines(data));
         }
     } else if let Some(report) = &app.analysis_result {
@@ -281,7 +287,20 @@ fn draw_analyze(frame: &mut Frame, app: &mut AppState, area: Rect) {
         ("Q", "Quit"),
     ]));
 
-    app.content_height = lines.len() as u16;
+    // Estimate wrapped height: each line may wrap across multiple terminal rows
+    let width = area.width.max(1) as usize;
+    let wrapped_height: u16 = lines
+        .iter()
+        .map(|line| {
+            let line_width: usize = line.spans.iter().map(|s| s.content.len()).sum();
+            if line_width == 0 {
+                1
+            } else {
+                line_width.div_ceil(width) as u16
+            }
+        })
+        .sum();
+    app.content_height = wrapped_height;
     app.visible_height = area.height;
 
     let paragraph = Paragraph::new(lines)
