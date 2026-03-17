@@ -42,6 +42,7 @@ fn make_activity_stats() -> ContributorActivityStats {
         active_dates_by_weekday,
         active_hour_buckets,
         active_hour_buckets_by_hour,
+        commits_by_date: std::collections::BTreeMap::new(),
     }
 }
 

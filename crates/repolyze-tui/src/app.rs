@@ -1,7 +1,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use repolyze_core::model::{ComparisonReport, PartialFailure};
+use repolyze_core::model::{ComparisonReport, HeatmapData, PartialFailure};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
@@ -17,12 +17,14 @@ pub enum AnalyzeView {
     All,
     UsersContribution,
     Activity,
+    ActivityHeatmap,
 }
 
-pub const ANALYZE_MENU_ITEMS: [(&str, AnalyzeView); 3] = [
+pub const ANALYZE_MENU_ITEMS: [(&str, AnalyzeView); 4] = [
     ("All (full report)", AnalyzeView::All),
     ("Users contribution", AnalyzeView::UsersContribution),
     ("Most active days and hours", AnalyzeView::Activity),
+    ("Activity heatmap", AnalyzeView::ActivityHeatmap),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,7 +86,10 @@ pub struct AppState {
     pub analyze_menu_selected: usize,
     pub selected_analyze_view: AnalyzeView,
     pub analysis_table: Option<String>,
+    pub heatmap_data: Option<HeatmapData>,
     pub metadata_text: Option<String>,
+    pub is_loading: bool,
+    pub spinner_frame: usize,
 }
 
 impl Default for AppState {
@@ -109,7 +114,10 @@ impl AppState {
             analyze_menu_selected: 0,
             selected_analyze_view: AnalyzeView::All,
             analysis_table: None,
+            heatmap_data: None,
             metadata_text: None,
+            is_loading: false,
+            spinner_frame: 0,
         }
     }
 
@@ -139,7 +147,10 @@ impl AppState {
         self.active_screen = Screen::Home;
         self.input_buffer.clear();
         self.input_paths.clear();
+        self.heatmap_data = None;
         self.metadata_text = None;
+        self.is_loading = false;
+        self.spinner_frame = 0;
         self.status_message = "Ready".to_string();
     }
 
@@ -150,6 +161,7 @@ impl AppState {
     pub fn dispatch_analyze(&mut self) {
         if !self.input_paths.is_empty() {
             self.analysis_table = None;
+            self.heatmap_data = None;
             self.pending_action = Some(AppAction::StartAnalyze {
                 paths: self.input_paths.clone(),
                 view: self.selected_analyze_view.clone(),
@@ -162,6 +174,7 @@ impl AppState {
             self.selected_analyze_view = view.clone();
             self.analysis_result = None;
             self.analysis_table = None;
+            self.heatmap_data = None;
             self.input_paths.clear();
             self.input_buffer.clear();
             self.input_paths.push(PathBuf::from("."));

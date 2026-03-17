@@ -1,6 +1,6 @@
 pub const MIGRATIONS: &[(i32, &str)] = &[(1, MIGRATION_V1)];
 
-pub const SCHEMA_VERSION: i32 = 1;
+pub const SCHEMA_VERSION: i32 = 2;
 
 const MIGRATION_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS app_settings (

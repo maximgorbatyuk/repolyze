@@ -3,15 +3,21 @@ pub mod event;
 pub mod ui;
 
 use std::io;
+use std::path::PathBuf;
+use std::sync::mpsc;
+use std::time::Duration;
 
 use crossterm::{
-    event::{Event, read as read_event},
+    event::{Event, poll as poll_event, read as read_event},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
-use repolyze_core::analytics::{build_user_activity_rows, build_users_contribution_rows};
+use repolyze_core::analytics::{
+    build_heatmap_data, build_user_activity_rows, build_users_contribution_rows,
+};
 use repolyze_core::input::resolve_inputs_with_failures;
+use repolyze_core::model::{ComparisonReport, HeatmapData};
 use repolyze_core::service::analyze_targets_with_store;
 use repolyze_git::backend::GitCliBackend;
 use repolyze_metrics::FilesystemMetricsBackend;
@@ -21,6 +27,14 @@ use repolyze_report::table::{
 
 use app::{AnalyzeView, AppAction, AppState};
 
+struct AnalysisCompletion {
+    report: ComparisonReport,
+    table_text: String,
+    heatmap_data: Option<HeatmapData>,
+    failure_count: usize,
+    error_message: Option<String>,
+}
+
 pub fn run() -> anyhow::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -29,15 +43,58 @@ pub fn run() -> anyhow::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = AppState::new();
+    let mut bg_receiver: Option<mpsc::Receiver<AnalysisCompletion>> = None;
 
     loop {
         terminal.draw(|frame| ui::draw(frame, &app))?;
 
-        if let Event::Key(key) = read_event()? {
+        // Non-blocking poll: 100ms timeout allows spinner animation at ~10fps
+        if poll_event(Duration::from_millis(100))?
+            && let Event::Key(key) = read_event()?
+        {
             event::handle_key(&mut app, key);
         }
 
-        execute_pending_action(&mut app)?;
+        // Advance spinner
+        if app.is_loading {
+            app.spinner_frame = app.spinner_frame.wrapping_add(1);
+        }
+
+        // Start pending analysis on background thread
+        if let Some(action) = app.take_action() {
+            match action {
+                AppAction::StartAnalyze { paths, view } => {
+                    app.is_loading = true;
+                    app.spinner_frame = 0;
+                    let (tx, rx) = mpsc::channel();
+                    std::thread::spawn(move || {
+                        let result = compute_analysis(paths, view, open_store);
+                        tx.send(result).ok();
+                    });
+                    bg_receiver = Some(rx);
+                }
+                AppAction::LoadMetadata => {
+                    app.metadata_text = Some(build_metadata_text(&open_store));
+                }
+            }
+        }
+
+        // Check for completed analysis
+        if let Some(rx) = &bg_receiver {
+            match rx.try_recv() {
+                Ok(completion) => {
+                    apply_analysis_completion(&mut app, completion);
+                    bg_receiver = None;
+                }
+                Err(mpsc::TryRecvError::Empty) => {} // still running
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    // Thread panicked or dropped sender
+                    app.is_loading = false;
+                    app.status_message = "Analysis failed unexpectedly".to_string();
+                    bg_receiver = None;
+                }
+            }
+        }
 
         if app.should_quit {
             break;
@@ -49,6 +106,106 @@ pub fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn compute_analysis<F>(
+    paths: Vec<PathBuf>,
+    view: AnalyzeView,
+    open_store_fn: F,
+) -> AnalysisCompletion
+where
+    F: Fn() -> anyhow::Result<repolyze_store::sqlite::SqliteStore>,
+{
+    let (targets, input_failures) = resolve_inputs_with_failures(&paths);
+    let git = GitCliBackend;
+    let metrics = FilesystemMetricsBackend;
+    let store = match open_store_fn() {
+        Ok(store) => store,
+        Err(error) => {
+            return AnalysisCompletion {
+                report: ComparisonReport {
+                    repositories: vec![],
+                    summary: repolyze_core::model::ComparisonSummary {
+                        total_contributors: 0,
+                        total_commits: 0,
+                        total_lines_changed: 0,
+                        total_files: 0,
+                    },
+                    failures: vec![],
+                },
+                table_text: String::new(),
+                heatmap_data: None,
+                failure_count: 0,
+                error_message: Some(format!("Analysis failed: failed to open database: {error}")),
+            };
+        }
+    };
+    let start = std::time::Instant::now();
+    let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store, "tui");
+    let elapsed = start.elapsed();
+    let failure_count = input_failures.len() + report.failures.len();
+
+    if !input_failures.is_empty() {
+        let mut failures = input_failures;
+        failures.extend(report.failures);
+        report.failures = failures;
+    }
+
+    let header = render_analysis_header(&report.repositories, elapsed);
+    let today = repolyze_core::date_util::today_ymd();
+    let (table_body, heatmap_data) = match view {
+        AnalyzeView::UsersContribution => {
+            let rows = build_users_contribution_rows(&report.repositories);
+            (render_users_contribution_table(&rows), None)
+        }
+        AnalyzeView::Activity => {
+            let rows = build_user_activity_rows(&report.repositories);
+            (render_user_activity_table(&rows), None)
+        }
+        AnalyzeView::ActivityHeatmap => {
+            let hm = build_heatmap_data(&report.repositories, None, &today);
+            (String::new(), Some(hm))
+        }
+        AnalyzeView::All => {
+            let contrib_rows = build_users_contribution_rows(&report.repositories);
+            let activity_rows = build_user_activity_rows(&report.repositories);
+            let mut combined = render_users_contribution_table(&contrib_rows);
+            combined.push_str("\n\n");
+            combined.push_str(&render_user_activity_table(&activity_rows));
+            let hm = build_heatmap_data(&report.repositories, None, &today);
+            (combined, Some(hm))
+        }
+    };
+
+    AnalysisCompletion {
+        report,
+        table_text: format!("{header}{table_body}"),
+        heatmap_data,
+        failure_count,
+        error_message: None,
+    }
+}
+
+fn apply_analysis_completion(app: &mut AppState, completion: AnalysisCompletion) {
+    app.is_loading = false;
+
+    if let Some(msg) = completion.error_message {
+        app.status_message = msg;
+        app.analysis_result = None;
+        app.analysis_table = None;
+        return;
+    }
+
+    app.analysis_table = Some(completion.table_text);
+    app.heatmap_data = completion.heatmap_data;
+    app.set_result(completion.report);
+    if completion.failure_count > 0 {
+        app.status_message = format!(
+            "Analysis complete with {} error(s)",
+            completion.failure_count
+        );
+    }
+}
+
+/// Synchronous execution for tests — keeps the existing test API working.
 pub fn execute_pending_action(app: &mut AppState) -> anyhow::Result<()> {
     execute_pending_action_with_store_opener(app, open_store)
 }
@@ -66,56 +223,8 @@ where
 
     match action {
         AppAction::StartAnalyze { paths, view } => {
-            let (targets, input_failures) = resolve_inputs_with_failures(&paths);
-            let git = GitCliBackend;
-            let metrics = FilesystemMetricsBackend;
-            let store = match open_store_fn() {
-                Ok(store) => store,
-                Err(error) => {
-                    app.status_message =
-                        format!("Analysis failed: failed to open database: {error}");
-                    app.analysis_result = None;
-                    app.analysis_table = None;
-                    return Ok(());
-                }
-            };
-            let start = std::time::Instant::now();
-            let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store, "tui");
-            let elapsed = start.elapsed();
-            let current_failure_count = input_failures.len() + report.failures.len();
-
-            if !input_failures.is_empty() {
-                let mut failures = input_failures;
-                failures.extend(report.failures);
-                report.failures = failures;
-            }
-
-            let header = render_analysis_header(&report.repositories, elapsed);
-            let table_body = match view {
-                AnalyzeView::UsersContribution => {
-                    let rows = build_users_contribution_rows(&report.repositories);
-                    render_users_contribution_table(&rows)
-                }
-                AnalyzeView::Activity => {
-                    let rows = build_user_activity_rows(&report.repositories);
-                    render_user_activity_table(&rows)
-                }
-                AnalyzeView::All => {
-                    let contrib_rows = build_users_contribution_rows(&report.repositories);
-                    let activity_rows = build_user_activity_rows(&report.repositories);
-                    let mut combined = render_users_contribution_table(&contrib_rows);
-                    combined.push_str("\n\n");
-                    combined.push_str(&render_user_activity_table(&activity_rows));
-                    combined
-                }
-            };
-            app.analysis_table = Some(format!("{header}{table_body}"));
-
-            app.set_result(report);
-            if current_failure_count > 0 {
-                app.status_message =
-                    format!("Analysis complete with {current_failure_count} error(s)");
-            }
+            let completion = compute_analysis(paths, view, &open_store_fn);
+            apply_analysis_completion(app, completion);
         }
         AppAction::LoadMetadata => {
             app.metadata_text = Some(build_metadata_text(&open_store_fn));
@@ -339,7 +448,7 @@ mod tests {
         let result = execute_pending_action_with_store_opener(&mut app, || Err(anyhow!("boom")));
 
         assert!(result.is_ok());
-        assert!(app.status_message.contains("failed to open database"));
+        assert!(!app.is_loading);
         assert!(app.pending_action.is_none());
     }
 

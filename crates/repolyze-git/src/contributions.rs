@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use repolyze_core::error::RepolyzeError;
 use repolyze_core::model::{
@@ -44,6 +44,7 @@ fn aggregate_contributions(commits: &[ParsedCommit]) -> ContributionSummary {
                 active_dates_by_weekday: std::array::from_fn(|_| BTreeSet::new()),
                 active_hour_buckets: BTreeSet::new(),
                 active_hour_buckets_by_hour: std::array::from_fn(|_| BTreeSet::new()),
+                commits_by_date: BTreeMap::new(),
             });
 
         acc.commits += 1;
@@ -62,6 +63,7 @@ fn aggregate_contributions(commits: &[ParsedCommit]) -> ContributionSummary {
             .to_string();
         if !date.is_empty() {
             acc.dates.insert(date.clone());
+            *acc.commits_by_date.entry(date.clone()).or_insert(0) += 1;
         }
         acc.timestamps.push(commit.timestamp.clone());
 
@@ -105,6 +107,7 @@ fn aggregate_contributions(commits: &[ParsedCommit]) -> ContributionSummary {
             active_dates_by_weekday: acc.active_dates_by_weekday,
             active_hour_buckets: acc.active_hour_buckets,
             active_hour_buckets_by_hour: acc.active_hour_buckets_by_hour,
+            commits_by_date: acc.commits_by_date,
         });
     }
 
@@ -139,6 +142,7 @@ struct ContributorAccumulator {
     active_dates_by_weekday: [BTreeSet<String>; 7],
     active_hour_buckets: BTreeSet<String>,
     active_hour_buckets_by_hour: [BTreeSet<String>; 24],
+    commits_by_date: BTreeMap<String, u32>,
 }
 
 #[cfg(test)]
@@ -275,5 +279,8 @@ mod tests {
         assert_eq!(alice.active_dates_by_weekday[2].len(), 1);
         // 2 distinct hour buckets: "2025-01-13:10" and "2025-01-15:14"
         assert_eq!(alice.active_hour_buckets.len(), 2);
+        // commits_by_date: 2 on 2025-01-13, 1 on 2025-01-15
+        assert_eq!(alice.commits_by_date.get("2025-01-13"), Some(&2));
+        assert_eq!(alice.commits_by_date.get("2025-01-15"), Some(&1));
     }
 }

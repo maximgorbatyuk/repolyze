@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -48,10 +48,12 @@ pub struct ContributorActivityStats {
     pub email: String,
     pub weekday_commits: [u32; 7],
     pub hour_commits: [u32; 24],
-    pub active_dates: std::collections::BTreeSet<String>,
-    pub active_dates_by_weekday: [std::collections::BTreeSet<String>; 7],
-    pub active_hour_buckets: std::collections::BTreeSet<String>,
-    pub active_hour_buckets_by_hour: [std::collections::BTreeSet<String>; 24],
+    pub active_dates: BTreeSet<String>,
+    pub active_dates_by_weekday: [BTreeSet<String>; 7],
+    pub active_hour_buckets: BTreeSet<String>,
+    pub active_hour_buckets_by_hour: [BTreeSet<String>; 24],
+    #[serde(default)]
+    pub commits_by_date: BTreeMap<String, u32>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -136,6 +138,19 @@ pub struct UserActivityRow {
     pub average_commits_per_day: f64,
     pub average_commits_per_hour_in_most_active_hour: f64,
     pub average_commits_per_hour: f64,
+}
+
+pub const HEATMAP_MAX_WEEKS: usize = 53;
+pub const DAYS_IN_WEEK: usize = 7;
+
+#[derive(Debug, Clone)]
+pub struct HeatmapData {
+    pub start_date: String,
+    pub end_date: String,
+    pub grid: [[u32; HEATMAP_MAX_WEEKS]; DAYS_IN_WEEK],
+    pub week_count: usize,
+    pub max_count: u32,
+    pub month_labels: Vec<(usize, String)>,
 }
 
 #[cfg(test)]
