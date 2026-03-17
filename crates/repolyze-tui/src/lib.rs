@@ -154,7 +154,10 @@ where
         report.failures = failures;
     }
 
-    let header = render_analysis_header(&report.repositories, elapsed);
+    let cwd = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| ".".to_string());
+    let header = render_analysis_header(&report.repositories, elapsed, &cwd);
     let today = repolyze_core::date_util::today_ymd();
     let (table_body, heatmap_data) = match view {
         AnalyzeView::UsersContribution => {

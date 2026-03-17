@@ -39,7 +39,8 @@ pub fn run_analyze(
         (AnalyzeView::All, OutputFormat::Json) => render_json(&report),
         (AnalyzeView::All, OutputFormat::Md) => Ok(render_markdown(&report)),
         (AnalyzeView::UsersContribution, OutputFormat::Table) => {
-            let header = render_analysis_header(&report.repositories, elapsed);
+            let folder = folder_display(repos);
+            let header = render_analysis_header(&report.repositories, elapsed, &folder);
             let rows = build_users_contribution_rows(&report.repositories);
             Ok(format!(
                 "{header}{}",
@@ -47,7 +48,8 @@ pub fn run_analyze(
             ))
         }
         (AnalyzeView::Activity, OutputFormat::Table) => {
-            let header = render_analysis_header(&report.repositories, elapsed);
+            let folder = folder_display(repos);
+            let header = render_analysis_header(&report.repositories, elapsed, &folder);
             let rows = build_user_activity_rows(&report.repositories);
             Ok(format!("{header}{}", render_user_activity_table(&rows)))
         }
@@ -72,6 +74,20 @@ fn validate_view_format(view: &AnalyzeView, format: &OutputFormat) -> anyhow::Re
         ) => Err(anyhow::anyhow!(
             "analytics views only support table format; use --format table"
         )),
+    }
+}
+
+fn folder_display(repos: &[PathBuf]) -> String {
+    if repos.len() == 1 {
+        repos[0]
+            .canonicalize()
+            .unwrap_or_else(|_| repos[0].clone())
+            .to_string_lossy()
+            .to_string()
+    } else {
+        std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| ".".to_string())
     }
 }
 

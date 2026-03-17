@@ -18,8 +18,12 @@ pub const COMPARE_REPOS_TITLE: &str = "Compare repositories";
 pub const COMPARE_REPOS_DESC: &str =
     "Side-by-side comparison of repository activity and commit frequency.";
 
-/// Build a summary header showing period, repo count, and elapsed time.
-pub fn render_analysis_header(repos: &[RepositoryAnalysis], elapsed: Duration) -> String {
+/// Build a summary header showing period, repo count, folder, mode, and elapsed time.
+pub fn render_analysis_header(
+    repos: &[RepositoryAnalysis],
+    elapsed: Duration,
+    folder: &str,
+) -> String {
     let repo_count = repos.len();
 
     // Derive period from earliest first_commit and latest last_commit across all contributors
@@ -49,6 +53,11 @@ pub fn render_analysis_header(repos: &[RepositoryAnalysis], elapsed: Duration) -
         .map(format_period_datetime)
         .unwrap_or_else(|| "?".to_string());
     let elapsed_str = format_duration(elapsed);
+    let mode = if repo_count == 1 {
+        "Single repository"
+    } else {
+        "Multi-repository"
+    };
 
     let mut out = String::new();
     out.push_str(&format!("Period:    {period_start} .. {period_end}\n"));
@@ -56,6 +65,8 @@ pub fn render_analysis_header(repos: &[RepositoryAnalysis], elapsed: Duration) -
         "Projects:  {repo_count} repositor{}\n",
         if repo_count == 1 { "y" } else { "ies" }
     ));
+    out.push_str(&format!("Folder:    {folder}\n"));
+    out.push_str(&format!("Mode:      {mode}\n"));
     out.push_str(&format!("Elapsed:   {elapsed_str}\n"));
     out.push('\n');
     out
@@ -463,9 +474,11 @@ mod tests {
             size: repolyze_core::model::SizeMetrics::default(),
         }];
 
-        let header = render_analysis_header(&repos, Duration::from_millis(250));
+        let header = render_analysis_header(&repos, Duration::from_millis(250), "/tmp/repo");
 
         assert!(header.contains("2025-01-01 09:10:11"));
         assert!(header.contains("2025-01-15 10:20:30"));
+        assert!(header.contains("Folder:    /tmp/repo"));
+        assert!(header.contains("Mode:      Single repository"));
     }
 }
