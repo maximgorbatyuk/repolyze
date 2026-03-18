@@ -139,6 +139,45 @@ section {
   margin-bottom: 40px;
 }
 
+/* ── Personas ── */
+
+.persona-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.persona-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 24px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.persona-card:hover {
+  border-color: var(--accent-blue);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+}
+
+.persona-icon {
+  font-size: 1.25rem;
+  color: var(--accent-blue);
+  margin-bottom: 12px;
+}
+
+.persona-card h3 {
+  font-size: 0.875rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.persona-card p {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
 /* ── Features ── */
 
 .features-grid {
@@ -445,6 +484,10 @@ a:focus-visible, .btn:focus-visible {
 @media (max-width: 768px) {
   .hero {
     padding: 48px 0 40px;
+  }
+
+  .persona-grid {
+    grid-template-columns: 1fr;
   }
 
   .features-grid {

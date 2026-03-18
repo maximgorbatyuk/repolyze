@@ -13,6 +13,12 @@ The initial product scope focuses on:
 - scrollable full-screen TUI with background analysis and animated spinner
 - JSON and Markdown report output
 
+## Who is Repolyze for?
+
+- **Team Leads** — Track team member contributions and effort across repositories. See who's active, how workload is distributed, and where the team's energy goes.
+- **Tech Leads** — Get actionable insights across company repositories. Compare codebases side by side, spot activity trends, and make data-driven decisions about your engineering portfolio.
+- **Individual Contributors** — Understand your own contribution patterns. Track your output over time, see where your effort goes, and benchmark your activity across projects.
+
 ## Installation
 
 ```bash
