@@ -44,6 +44,10 @@ pub struct AnalyzeArgs {
     /// Output file (stdout if omitted)
     #[arg(long)]
     pub output: Option<PathBuf>,
+
+    /// Contributor email (required for user-effort view)
+    #[arg(long)]
+    pub email: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -66,9 +70,11 @@ pub enum AnalyzeView {
     /// Full analysis (JSON or Markdown)
     All,
     /// Per-contributor commit and line statistics (RF-8)
-    UsersContribution,
+    Contribution,
     /// Most active days and hours per contributor (RF-9)
     Activity,
+    /// Detailed per-contributor deep-dive
+    UserEffort,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -82,7 +88,9 @@ impl OutputFormat {
     pub fn default_for_view(view: &AnalyzeView) -> Self {
         match view {
             AnalyzeView::All => Self::Json,
-            AnalyzeView::UsersContribution | AnalyzeView::Activity => Self::Table,
+            AnalyzeView::Contribution | AnalyzeView::Activity | AnalyzeView::UserEffort => {
+                Self::Table
+            }
         }
     }
 }

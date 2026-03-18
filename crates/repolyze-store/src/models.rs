@@ -89,7 +89,7 @@ impl CommitFileChangeRecord {
 }
 
 #[derive(Debug, Clone)]
-pub struct UsersContributionRowRecord {
+pub struct ContributionRowRecord {
     pub email: String,
     pub commits: i64,
     pub lines_modified: i64,

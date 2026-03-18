@@ -276,6 +276,7 @@ mod tests {
                     lines_deleted: commits * 5,
                     net_lines: (commits * 15) as i64,
                     files_touched: files,
+                    file_extensions: std::collections::BTreeMap::new(),
                     active_days: 3,
                     first_commit: "2025-01-01".to_string(),
                     last_commit: "2025-01-15".to_string(),

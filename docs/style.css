@@ -17,6 +17,9 @@
   --prompt-green: #22c55e;
   --border-color: #e2e8f0;
   --font-mono: 'JetBrains Mono', monospace;
+  --dot-color: rgba(15, 23, 42, 0.12);
+  --dot-size: 1.25px;
+  --dot-spacing: 22px;
 }
 
 html {
@@ -26,7 +29,9 @@ html {
 body {
   font-family: var(--font-mono);
   color: var(--text-primary);
-  background: var(--bg-primary);
+  background-color: var(--bg-primary);
+  background-image: radial-gradient(circle, var(--dot-color) var(--dot-size), transparent calc(var(--dot-size) + 0.5px));
+  background-size: var(--dot-spacing) var(--dot-spacing);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
@@ -42,7 +47,7 @@ body {
 .hero {
   padding: 80px 0 64px;
   text-align: center;
-  background: var(--bg-primary);
+  background: transparent;
 }
 
 .hero-logo {
@@ -85,6 +90,11 @@ body {
   flex-wrap: wrap;
 }
 
+.cta-center {
+  justify-content: center;
+  margin-top: 16px;
+}
+
 .btn {
   display: inline-block;
   padding: 12px 24px;
@@ -125,6 +135,11 @@ section {
 
 .bg-alt {
   background: var(--bg-secondary);
+}
+
+.section-blue {
+  background-color: #c6d6fb57;
+  background-image: none;
 }
 
 .section-title {

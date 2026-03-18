@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use repolyze_core::analytics::{build_user_activity_rows, build_users_contribution_rows};
+use repolyze_core::analytics::{
+    build_contribution_rows, build_user_activity_rows, build_user_effort_data,
+};
 use repolyze_core::input::resolve_inputs_with_failures;
 use repolyze_core::service::analyze_targets_with_store;
 use repolyze_git::backend::GitCliBackend;
@@ -8,7 +10,8 @@ use repolyze_metrics::FilesystemMetricsBackend;
 use repolyze_report::json::render_json;
 use repolyze_report::markdown::render_markdown;
 use repolyze_report::table::{
-    render_analysis_header, render_user_activity_table, render_users_contribution_table,
+    render_analysis_header, render_contribution_table, render_user_activity_table,
+    render_user_effort_table,
 };
 
 use crate::args::{AnalyzeView, OutputFormat};
@@ -18,6 +21,7 @@ pub fn run_analyze(
     repos: &[PathBuf],
     view: &AnalyzeView,
     format: &OutputFormat,
+    email: Option<&str>,
 ) -> anyhow::Result<String> {
     validate_view_format(view, format)?;
 
@@ -38,14 +42,11 @@ pub fn run_analyze(
     match (view, format) {
         (AnalyzeView::All, OutputFormat::Json) => render_json(&report),
         (AnalyzeView::All, OutputFormat::Md) => Ok(render_markdown(&report)),
-        (AnalyzeView::UsersContribution, OutputFormat::Table) => {
+        (AnalyzeView::Contribution, OutputFormat::Table) => {
             let folder = folder_display(repos);
             let header = render_analysis_header(&report.repositories, elapsed, &folder);
-            let rows = build_users_contribution_rows(&report.repositories);
-            Ok(format!(
-                "{header}{}",
-                render_users_contribution_table(&rows)
-            ))
+            let rows = build_contribution_rows(&report.repositories);
+            Ok(format!("{header}{}", render_contribution_table(&rows)))
         }
         (AnalyzeView::Activity, OutputFormat::Table) => {
             let folder = folder_display(repos);
@@ -53,23 +54,31 @@ pub fn run_analyze(
             let rows = build_user_activity_rows(&report.repositories);
             Ok(format!("{header}{}", render_user_activity_table(&rows)))
         }
-        (AnalyzeView::All, OutputFormat::Table)
-        | (
-            AnalyzeView::UsersContribution | AnalyzeView::Activity,
-            OutputFormat::Json | OutputFormat::Md,
-        ) => Err(anyhow::anyhow!("unsupported view/format combination")),
+        (AnalyzeView::UserEffort, OutputFormat::Table) => {
+            let email =
+                email.ok_or_else(|| anyhow::anyhow!("--email is required for user-effort view"))?;
+            let folder = folder_display(repos);
+            let header = render_analysis_header(&report.repositories, elapsed, &folder);
+            let effort = build_user_effort_data(&report.repositories, email)
+                .ok_or_else(|| anyhow::anyhow!("no data found for email '{email}'"))?;
+            Ok(format!("{header}{}", render_user_effort_table(&effort)))
+        }
+        _ => Err(anyhow::anyhow!("unsupported view/format combination")),
     }
 }
 
 fn validate_view_format(view: &AnalyzeView, format: &OutputFormat) -> anyhow::Result<()> {
     match (view, format) {
         (AnalyzeView::All, OutputFormat::Json | OutputFormat::Md) => Ok(()),
-        (AnalyzeView::UsersContribution | AnalyzeView::Activity, OutputFormat::Table) => Ok(()),
+        (
+            AnalyzeView::Contribution | AnalyzeView::Activity | AnalyzeView::UserEffort,
+            OutputFormat::Table,
+        ) => Ok(()),
         (AnalyzeView::All, OutputFormat::Table) => Err(anyhow::anyhow!(
             "'all' view does not support table format; use json or md"
         )),
         (
-            AnalyzeView::UsersContribution | AnalyzeView::Activity,
+            AnalyzeView::Contribution | AnalyzeView::Activity | AnalyzeView::UserEffort,
             OutputFormat::Json | OutputFormat::Md,
         ) => Err(anyhow::anyhow!(
             "analytics views only support table format; use --format table"

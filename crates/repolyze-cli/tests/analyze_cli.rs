@@ -249,14 +249,14 @@ fn create_workspace_with_two_repos() -> tempfile::TempDir {
 }
 
 #[test]
-fn analyze_users_contribution_discovers_repos_under_directory() {
+fn analyze_contribution_discovers_repos_under_directory() {
     let workspace = create_workspace_with_two_repos();
     let db = isolated_db();
 
     repolyze_cmd(&db)
         .args([
             "analyze",
-            "users-contribution",
+            "contribution",
             "--repo",
             workspace.path().to_str().unwrap(),
             "--format",
@@ -288,20 +288,58 @@ fn analyze_activity_outputs_ascii_table() {
 }
 
 #[test]
-fn analyze_users_contribution_defaults_to_table_format() {
+fn analyze_contribution_defaults_to_table_format() {
     let workspace = create_workspace_with_two_repos();
     let db = isolated_db();
 
     repolyze_cmd(&db)
         .args([
             "analyze",
-            "users-contribution",
+            "contribution",
             "--repo",
             workspace.path().to_str().unwrap(),
         ])
         .assert()
         .success()
         .stdout(predicate::str::contains("Files Touched"));
+}
+
+#[test]
+fn analyze_user_effort_outputs_table() {
+    let repo = create_fixture_repo();
+    let db = isolated_db();
+
+    repolyze_cmd(&db)
+        .args([
+            "analyze",
+            "user-effort",
+            "--repo",
+            repo.path().to_str().unwrap(),
+            "--email",
+            "test@test.com",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("First commit"))
+        .stdout(predicate::str::contains("Most active weekday"))
+        .stdout(predicate::str::contains("test@test.com"));
+}
+
+#[test]
+fn analyze_user_effort_requires_email() {
+    let repo = create_fixture_repo();
+    let db = isolated_db();
+
+    repolyze_cmd(&db)
+        .args([
+            "analyze",
+            "user-effort",
+            "--repo",
+            repo.path().to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--email is required"));
 }
 
 #[test]

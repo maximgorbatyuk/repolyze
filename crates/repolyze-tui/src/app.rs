@@ -1,5 +1,6 @@
 use std::fmt;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use repolyze_core::model::{ComparisonReport, HeatmapData, PartialFailure};
 
@@ -10,22 +11,25 @@ pub enum Screen {
     AnalyzeMenu,
     Analyze,
     Metadata,
+    UserSelect,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AnalyzeView {
     All,
-    UsersContribution,
+    Contribution,
     Activity,
     ActivityHeatmap,
+    UserEffort,
     CompareRepos,
 }
 
-pub const ANALYZE_MENU_ITEMS: [(&str, AnalyzeView); 5] = [
+pub const ANALYZE_MENU_ITEMS: [(&str, AnalyzeView); 6] = [
     ("Full report", AnalyzeView::All),
-    ("Users contribution", AnalyzeView::UsersContribution),
+    ("Contribution", AnalyzeView::Contribution),
     ("Most active days and hours", AnalyzeView::Activity),
     ("Activity heatmap", AnalyzeView::ActivityHeatmap),
+    ("User effort", AnalyzeView::UserEffort),
     ("Compare repositories", AnalyzeView::CompareRepos),
 ];
 
@@ -77,6 +81,7 @@ pub enum AppAction {
         paths: Vec<PathBuf>,
         view: AnalyzeView,
     },
+    RenderUserEffort,
     LoadMetadata,
     ProbeWorkspace,
 }
@@ -104,6 +109,11 @@ pub struct AppState {
     pub scroll_offset: u16,
     pub content_height: u16,
     pub visible_height: u16,
+    pub contributor_list: Vec<(String, String)>,
+    pub contributor_filter: String,
+    pub contributor_selected: usize,
+    pub selected_email: Option<String>,
+    pub analysis_elapsed: Duration,
 }
 
 impl Default for AppState {
@@ -136,6 +146,11 @@ impl AppState {
             scroll_offset: 0,
             content_height: 0,
             visible_height: 0,
+            contributor_list: Vec::new(),
+            contributor_filter: String::new(),
+            contributor_selected: 0,
+            selected_email: None,
+            analysis_elapsed: Duration::ZERO,
         }
     }
 
@@ -178,6 +193,10 @@ impl AppState {
         self.spinner_frame = 0;
         self.scroll_offset = 0;
         self.status_message = "Ready".to_string();
+        self.contributor_list.clear();
+        self.contributor_filter.clear();
+        self.contributor_selected = 0;
+        self.selected_email = None;
     }
 
     pub fn quit(&mut self) {
@@ -216,9 +235,9 @@ impl AppState {
             .as_ref()
             .is_some_and(|w| !w.is_single_repo && w.repo_count > 1);
         if is_multi {
-            ANALYZE_MENU_ITEMS.len()
+            ANALYZE_MENU_ITEMS.len() // includes "Compare repositories"
         } else {
-            ANALYZE_MENU_ITEMS.len() - 1
+            ANALYZE_MENU_ITEMS.len() - 1 // hide "Compare repositories"
         }
     }
 
@@ -263,6 +282,56 @@ impl AppState {
         let max_offset = self.content_height.saturating_sub(self.visible_height);
         if self.scroll_offset < max_offset {
             self.scroll_offset += 1;
+        }
+    }
+
+    pub fn filtered_contributors(&self) -> Vec<&(String, String)> {
+        if self.contributor_filter.is_empty() {
+            return self.contributor_list.iter().collect();
+        }
+        let filter = self.contributor_filter.to_lowercase();
+        self.contributor_list
+            .iter()
+            .filter(|(email, name)| {
+                email.to_lowercase().contains(&filter) || name.to_lowercase().contains(&filter)
+            })
+            .collect()
+    }
+
+    pub fn select_contributor(&mut self) {
+        let filtered = self.filtered_contributors();
+        if let Some((email, _)) = filtered.get(self.contributor_selected) {
+            self.selected_email = Some(email.to_string());
+            self.active_screen = Screen::Analyze;
+            self.pending_action = Some(AppAction::RenderUserEffort);
+        }
+    }
+
+    pub fn contributor_select_up(&mut self) {
+        if self.contributor_selected > 0 {
+            self.contributor_selected -= 1;
+        }
+        self.ensure_contributor_visible();
+    }
+
+    pub fn contributor_select_down(&mut self) {
+        let len = self.filtered_contributors().len();
+        if self.contributor_selected + 1 < len {
+            self.contributor_selected += 1;
+        }
+        self.ensure_contributor_visible();
+    }
+
+    fn ensure_contributor_visible(&mut self) {
+        // 4 header lines (title, blank, filter, blank), 2 footer lines (blank, hints)
+        let header_lines: u16 = 4;
+        let footer_lines: u16 = 2;
+        let item_line = header_lines + self.contributor_selected as u16;
+        let visible = self.visible_height.saturating_sub(footer_lines);
+        if visible > 0 && item_line >= self.scroll_offset + visible {
+            self.scroll_offset = item_line - visible + 1;
+        } else if item_line < self.scroll_offset {
+            self.scroll_offset = item_line;
         }
     }
 }
@@ -409,18 +478,18 @@ mod tests {
     }
 
     #[test]
-    fn analyze_users_contribution_dispatches_immediately() {
+    fn analyze_contribution_dispatches_immediately() {
         let mut app = AppState::new();
         app.active_screen = Screen::AnalyzeMenu;
         app.analyze_menu_selected = 1;
         app.select_analyze_view();
         assert_eq!(app.active_screen, Screen::Analyze);
-        assert_eq!(app.selected_analyze_view, AnalyzeView::UsersContribution);
+        assert_eq!(app.selected_analyze_view, AnalyzeView::Contribution);
         assert_eq!(
             app.pending_action,
             Some(AppAction::StartAnalyze {
                 paths: vec![PathBuf::from(".")],
-                view: AnalyzeView::UsersContribution,
+                view: AnalyzeView::Contribution,
             })
         );
     }
@@ -454,5 +523,51 @@ mod tests {
         for item in &[MenuItem::Analyze, MenuItem::Help, MenuItem::Metadata] {
             assert!(!item.description().is_empty());
         }
+    }
+
+    #[test]
+    fn user_effort_menu_item_exists() {
+        let found = ANALYZE_MENU_ITEMS
+            .iter()
+            .any(|(label, view)| *label == "User effort" && *view == AnalyzeView::UserEffort);
+        assert!(found);
+    }
+
+    #[test]
+    fn filtered_contributors_matches_email_and_name() {
+        let mut app = AppState::new();
+        app.contributor_list = vec![
+            ("alice@example.com".to_string(), "Alice".to_string()),
+            ("bob@example.com".to_string(), "Bob".to_string()),
+        ];
+
+        app.contributor_filter = "ali".to_string();
+        let filtered = app.filtered_contributors();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].0, "alice@example.com");
+
+        app.contributor_filter = "Bob".to_string();
+        let filtered = app.filtered_contributors();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].0, "bob@example.com");
+
+        app.contributor_filter.clear();
+        assert_eq!(app.filtered_contributors().len(), 2);
+    }
+
+    #[test]
+    fn select_contributor_sets_state() {
+        let mut app = AppState::new();
+        app.contributor_list = vec![
+            ("alice@example.com".to_string(), "Alice".to_string()),
+            ("bob@example.com".to_string(), "Bob".to_string()),
+        ];
+        app.active_screen = Screen::UserSelect;
+        app.contributor_selected = 1;
+        app.select_contributor();
+
+        assert_eq!(app.selected_email, Some("bob@example.com".to_string()));
+        assert_eq!(app.active_screen, Screen::Analyze);
+        assert_eq!(app.pending_action, Some(AppAction::RenderUserEffort));
     }
 }

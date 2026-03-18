@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -38,6 +39,8 @@ pub struct ContributorStats {
     pub lines_deleted: u64,
     pub net_lines: i64,
     pub files_touched: u64,
+    #[serde(default)]
+    pub file_extensions: BTreeMap<String, u64>,
     pub active_days: u64,
     pub first_commit: String,
     pub last_commit: String,
@@ -121,7 +124,7 @@ pub struct PartialFailure {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct UsersContributionRow {
+pub struct ContributionRow {
     pub email: String,
     pub commits: u64,
     pub lines_modified: u64,
@@ -137,6 +140,30 @@ pub struct UserActivityRow {
     pub average_commits_per_day: f64,
     pub average_commits_per_hour_in_most_active_hour: f64,
     pub average_commits_per_hour: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UserEffortData {
+    pub name: String,
+    pub email: String,
+    pub first_commit: String,
+    pub last_commit: String,
+    pub most_active_weekday: String,
+    pub most_active_weekday_commits_per_day: f64,
+    pub average_commits_per_day: f64,
+    pub least_active_weekday: String,
+    pub least_active_weekday_commits_per_day: f64,
+    pub avg_files_per_commit: f64,
+    pub avg_files_per_day: f64,
+    pub avg_lines_per_commit: f64,
+    pub avg_lines_per_day: f64,
+    pub top_extensions: Vec<(String, u64)>,
+}
+
+impl fmt::Display for UserEffortData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} ({})", self.email, self.name)
+    }
 }
 
 pub const HEATMAP_MAX_WEEKS: usize = 53;

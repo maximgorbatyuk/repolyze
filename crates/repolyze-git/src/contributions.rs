@@ -86,6 +86,15 @@ fn aggregate_contributions(commits: &[ParsedCommit]) -> ContributionSummary {
         let last_commit = acc.timestamps.iter().max().cloned().unwrap_or_default();
         let email_lower = acc.email.to_lowercase();
 
+        let mut ext_map: BTreeMap<String, u64> = BTreeMap::new();
+        for path in &acc.files {
+            let ext = std::path::Path::new(path)
+                .extension()
+                .map(|e| e.to_string_lossy().to_string())
+                .unwrap_or_else(|| "(other)".to_string());
+            *ext_map.entry(ext).or_insert(0) += 1;
+        }
+
         contributors.push(ContributorStats {
             name: acc.name,
             email: email_lower.clone(),
@@ -94,6 +103,7 @@ fn aggregate_contributions(commits: &[ParsedCommit]) -> ContributionSummary {
             lines_deleted: acc.lines_deleted,
             net_lines: (acc.lines_added as i64).saturating_sub(acc.lines_deleted as i64),
             files_touched: acc.files.len() as u64,
+            file_extensions: ext_map,
             active_days: acc.dates.len() as u64,
             first_commit,
             last_commit,
@@ -282,5 +292,54 @@ mod tests {
         // commits_by_date: 2 on 2025-01-13, 1 on 2025-01-15
         assert_eq!(alice.commits_by_date.get("2025-01-13"), Some(&2));
         assert_eq!(alice.commits_by_date.get("2025-01-15"), Some(&1));
+    }
+
+    #[test]
+    fn file_extensions_tracked_per_contributor() {
+        let commits = vec![
+            make_commit(
+                "alice@example.com",
+                "2025-01-13T10:00:00+00:00",
+                5,
+                1,
+                "src/main.rs",
+            ),
+            make_commit(
+                "alice@example.com",
+                "2025-01-13T11:00:00+00:00",
+                3,
+                0,
+                "src/lib.rs",
+            ),
+            make_commit(
+                "alice@example.com",
+                "2025-01-14T09:00:00+00:00",
+                2,
+                2,
+                "README.md",
+            ),
+        ];
+
+        let summary = aggregate_contributions(&commits);
+        let alice = &summary.contributors[0];
+
+        assert_eq!(alice.file_extensions.get("rs"), Some(&2));
+        assert_eq!(alice.file_extensions.get("md"), Some(&1));
+    }
+
+    #[test]
+    fn file_extensions_handles_no_extension() {
+        let commits = vec![make_commit(
+            "alice@example.com",
+            "2025-01-13T10:00:00+00:00",
+            5,
+            1,
+            "Makefile",
+        )];
+
+        let summary = aggregate_contributions(&commits);
+        let alice = &summary.contributors[0];
+
+        assert_eq!(alice.file_extensions.get("(other)"), Some(&1));
     }
 }

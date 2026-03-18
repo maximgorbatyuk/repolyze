@@ -44,6 +44,7 @@ impl GitAnalyzer for FakeGitAnalyzer {
                     lines_deleted: 0,
                     net_lines: 1,
                     files_touched: 1,
+                    file_extensions: std::collections::BTreeMap::new(),
                     active_days: 1,
                     first_commit: "2025-01-01T00:00:00+00:00".to_string(),
                     last_commit: "2025-01-01T00:00:00+00:00".to_string(),

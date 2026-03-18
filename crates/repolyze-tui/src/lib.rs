@@ -2,6 +2,7 @@ pub mod app;
 pub mod event;
 pub mod ui;
 
+use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -14,8 +15,8 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use repolyze_core::analytics::{
-    build_heatmap_data, build_repo_comparison, build_user_activity_rows,
-    build_users_contribution_rows,
+    build_contribution_rows, build_heatmap_data, build_repo_comparison, build_user_activity_rows,
+    build_user_effort_data,
 };
 use repolyze_core::input::{resolve_input, resolve_inputs_with_failures};
 use repolyze_core::model::{ComparisonReport, HeatmapData};
@@ -23,8 +24,9 @@ use repolyze_core::service::analyze_targets_with_store;
 use repolyze_git::backend::GitCliBackend;
 use repolyze_metrics::FilesystemMetricsBackend;
 use repolyze_report::table::{
-    ACTIVITY_TITLE, COMPARE_REPOS_TITLE, USERS_CONTRIBUTION_TITLE, render_analysis_header,
-    render_repo_comparison_table, render_user_activity_table, render_users_contribution_table,
+    ACTIVITY_TITLE, COMPARE_REPOS_TITLE, CONTRIBUTION_TITLE, render_analysis_header,
+    render_contribution_table, render_repo_comparison_table, render_user_activity_table,
+    render_user_effort_table,
 };
 
 use app::{AnalyzeView, AppAction, AppState};
@@ -35,6 +37,7 @@ struct AnalysisCompletion {
     heatmap_data: Option<HeatmapData>,
     failure_count: usize,
     error_message: Option<String>,
+    elapsed: Duration,
 }
 
 pub fn run() -> anyhow::Result<()> {
@@ -74,6 +77,9 @@ pub fn run() -> anyhow::Result<()> {
                         tx.send(result).ok();
                     });
                     bg_receiver = Some(rx);
+                }
+                AppAction::RenderUserEffort => {
+                    render_user_effort_for_selected(&mut app);
                 }
                 AppAction::LoadMetadata => {
                     app.metadata_text = Some(build_metadata_text(&open_store));
@@ -140,6 +146,7 @@ where
                 heatmap_data: None,
                 failure_count: 0,
                 error_message: Some(format!("Analysis failed: failed to open database: {error}")),
+                elapsed: Duration::ZERO,
             };
         }
     };
@@ -160,9 +167,9 @@ where
     let header = render_analysis_header(&report.repositories, elapsed, &cwd);
     let today = repolyze_core::date_util::today_ymd();
     let (table_body, heatmap_data) = match view {
-        AnalyzeView::UsersContribution => {
-            let rows = build_users_contribution_rows(&report.repositories);
-            (render_users_contribution_table(&rows), None)
+        AnalyzeView::Contribution => {
+            let rows = build_contribution_rows(&report.repositories);
+            (render_contribution_table(&rows), None)
         }
         AnalyzeView::Activity => {
             let rows = build_user_activity_rows(&report.repositories);
@@ -172,15 +179,19 @@ where
             let hm = build_heatmap_data(&report.repositories, None, &today);
             (String::new(), Some(hm))
         }
+        AnalyzeView::UserEffort => {
+            // UserEffort needs contributor selection first; table built later
+            (String::new(), None)
+        }
         AnalyzeView::CompareRepos => {
             let comparison = build_repo_comparison(&report.repositories);
             (render_repo_comparison_table(&comparison), None)
         }
         AnalyzeView::All => {
-            let contrib_rows = build_users_contribution_rows(&report.repositories);
+            let contrib_rows = build_contribution_rows(&report.repositories);
             let activity_rows = build_user_activity_rows(&report.repositories);
-            let mut combined = format!("#1 {USERS_CONTRIBUTION_TITLE}\n\n");
-            combined.push_str(&render_users_contribution_table(&contrib_rows));
+            let mut combined = format!("#1 {CONTRIBUTION_TITLE}\n\n");
+            combined.push_str(&render_contribution_table(&contrib_rows));
             combined.push_str(&format!("\n\n#2 {ACTIVITY_TITLE}\n\n"));
             combined.push_str(&render_user_activity_table(&activity_rows));
             // Include repo comparison if multi-repo
@@ -203,11 +214,13 @@ where
         heatmap_data,
         failure_count,
         error_message: None,
+        elapsed,
     }
 }
 
 fn apply_analysis_completion(app: &mut AppState, completion: AnalysisCompletion) {
     app.is_loading = false;
+    app.analysis_elapsed = completion.elapsed;
 
     if let Some(msg) = completion.error_message {
         app.status_message = msg;
@@ -224,6 +237,32 @@ fn apply_analysis_completion(app: &mut AppState, completion: AnalysisCompletion)
             "Analysis complete with {} error(s)",
             completion.failure_count
         );
+    }
+
+    // UserEffort: populate contributor list and transition to selection screen.
+    // Use lightweight email collection — avoids the full merge_activity_by_email
+    // that build_user_effort_data will do later for the selected contributor.
+    if app.selected_analyze_view == AnalyzeView::UserEffort
+        && app.selected_email.is_none()
+        && let Some(report) = &app.analysis_result
+    {
+        let mut email_map: HashMap<String, (String, u64)> = HashMap::new();
+        for repo in &report.repositories {
+            for cs in &repo.contributions.contributors {
+                let email = cs.email.to_lowercase();
+                let entry = email_map
+                    .entry(email)
+                    .or_insert_with(|| (cs.name.clone(), 0));
+                entry.1 += cs.commits;
+            }
+        }
+        let mut entries: Vec<_> = email_map.into_iter().collect();
+        entries.sort_by(|a, b| b.1.1.cmp(&a.1.1).then(a.0.cmp(&b.0)));
+        app.contributor_list = entries.into_iter().map(|(e, (n, _))| (e, n)).collect();
+        app.contributor_filter.clear();
+        app.contributor_selected = 0;
+        app.scroll_offset = 0;
+        app.active_screen = app::Screen::UserSelect;
     }
 }
 
@@ -248,6 +287,9 @@ where
             let completion = compute_analysis(paths, view, &open_store_fn);
             apply_analysis_completion(app, completion);
         }
+        AppAction::RenderUserEffort => {
+            render_user_effort_for_selected(app);
+        }
         AppAction::LoadMetadata => {
             app.metadata_text = Some(build_metadata_text(&open_store_fn));
         }
@@ -257,6 +299,35 @@ where
     }
 
     Ok(())
+}
+
+fn render_user_effort_for_selected(app: &mut AppState) {
+    let email = match &app.selected_email {
+        Some(e) => e.clone(),
+        None => return,
+    };
+    let repos = match &app.analysis_result {
+        Some(report) => &report.repositories,
+        None => return,
+    };
+
+    let cwd = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| ".".to_string());
+    let header = render_analysis_header(repos, app.analysis_elapsed, &cwd);
+
+    let today = repolyze_core::date_util::today_ymd();
+
+    if let Some(effort) = build_user_effort_data(repos, &email) {
+        let table_body = render_user_effort_table(&effort);
+        app.analysis_table = Some(format!("{header}{table_body}"));
+        let hm = build_heatmap_data(repos, Some(&email), &today);
+        app.heatmap_data = Some(hm);
+    } else {
+        app.analysis_table = Some(format!("{header}No data found for {email}"));
+        app.heatmap_data = None;
+    }
+    app.scroll_offset = 0;
 }
 
 fn build_metadata_text<F>(open_store_fn: &F) -> String

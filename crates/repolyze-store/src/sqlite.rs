@@ -6,8 +6,8 @@ use serde_json::from_str;
 use crate::error::StoreError;
 use crate::migrations::SCHEMA_VERSION;
 use crate::models::{
-    CommitFileChangeRecord, CommitRecord, ContributorRecord, UserActivityRowRecord,
-    UsersContributionRowRecord,
+    CommitFileChangeRecord, CommitRecord, ContributionRowRecord, ContributorRecord,
+    UserActivityRowRecord,
 };
 
 pub struct SqliteStore {
@@ -370,23 +370,21 @@ impl SqliteStore {
         Ok(count)
     }
 
-    pub fn users_contribution_rows_for_snapshots(
+    pub fn contribution_rows_for_snapshots(
         &self,
         snapshot_ids: &[i64],
-    ) -> Result<Vec<UsersContributionRowRecord>, StoreError> {
+    ) -> Result<Vec<ContributionRowRecord>, StoreError> {
         let analyses = self.load_analyses_for_snapshot_ids(snapshot_ids)?;
-        Ok(
-            repolyze_core::analytics::build_users_contribution_rows(&analyses)
-                .into_iter()
-                .map(|row| UsersContributionRowRecord {
-                    email: row.email,
-                    commits: row.commits as i64,
-                    lines_modified: row.lines_modified as i64,
-                    lines_per_commit: row.lines_per_commit,
-                    files_touched: row.files_touched as i64,
-                })
-                .collect(),
-        )
+        Ok(repolyze_core::analytics::build_contribution_rows(&analyses)
+            .into_iter()
+            .map(|row| ContributionRowRecord {
+                email: row.email,
+                commits: row.commits as i64,
+                lines_modified: row.lines_modified as i64,
+                lines_per_commit: row.lines_per_commit,
+                files_touched: row.files_touched as i64,
+            })
+            .collect())
     }
 
     pub fn user_activity_rows_for_snapshots(

@@ -112,7 +112,7 @@ fn rf8_and_rf9_queries_return_snapshot_scoped_rows() {
     let fixture = seed_snapshot_with_one_contributor(&store);
 
     let rf8_rows = store
-        .users_contribution_rows_for_snapshots(&[fixture.snapshot_id])
+        .contribution_rows_for_snapshots(&[fixture.snapshot_id])
         .unwrap();
     let rf9_rows = store
         .user_activity_rows_for_snapshots(&[fixture.snapshot_id])
@@ -218,7 +218,7 @@ fn rf8_and_rf9_queries_merge_same_email_across_snapshots() {
 
     let snapshot_ids = [fixture_a.snapshot_id, snapshot_b];
     let rf8_rows = store
-        .users_contribution_rows_for_snapshots(&snapshot_ids)
+        .contribution_rows_for_snapshots(&snapshot_ids)
         .unwrap();
     let rf9_rows = store
         .user_activity_rows_for_snapshots(&snapshot_ids)

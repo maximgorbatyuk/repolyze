@@ -44,6 +44,7 @@ pub fn draw(frame: &mut Frame, app: &mut AppState) {
         Screen::AnalyzeMenu => draw_analyze_menu(frame, app, area),
         Screen::Analyze => draw_analyze(frame, app, area),
         Screen::Metadata => draw_metadata(frame, app, area),
+        Screen::UserSelect => draw_user_select(frame, &mut *app, area),
     }
 }
 
@@ -233,9 +234,10 @@ fn draw_analyze_menu(frame: &mut Frame, app: &AppState, area: Rect) {
 fn draw_analyze(frame: &mut Frame, app: &mut AppState, area: Rect) {
     let view_label = match &app.selected_analyze_view {
         AnalyzeView::All => "All",
-        AnalyzeView::UsersContribution => "Users contribution",
+        AnalyzeView::Contribution => "Contribution",
         AnalyzeView::Activity => "Most active days and hours",
         AnalyzeView::ActivityHeatmap => "Activity heatmap",
+        AnalyzeView::UserEffort => "User effort",
         AnalyzeView::CompareRepos => "Compare repositories",
     };
 
@@ -406,6 +408,64 @@ fn heatmap_lines(data: &HeatmapData) -> Vec<Line<'static>> {
     lines.push(Line::from(legend_spans));
 
     lines
+}
+
+fn draw_user_select(frame: &mut Frame, app: &mut AppState, area: Rect) {
+    let mut lines = vec![
+        Line::from(Span::styled(
+            " User Effort \u{2014} Select Contributor",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+
+    // Filter input
+    lines.push(Line::from(vec![
+        Span::styled(" Filter: ", Style::default().fg(Color::DarkGray)),
+        Span::raw(&app.contributor_filter),
+        Span::styled("_", Style::default().fg(Color::Yellow)),
+    ]));
+    lines.push(Line::from(""));
+
+    let filtered = app.filtered_contributors();
+    if filtered.is_empty() {
+        lines.push(Line::from(Span::styled(
+            " No contributors match the filter.",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for (i, (email, name)) in filtered.iter().enumerate() {
+            let is_selected = i == app.contributor_selected;
+            let (prefix, style) = if is_selected {
+                (
+                    "\u{27a4} ",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                ("  ", Style::default())
+            };
+            lines.push(Line::from(Span::styled(
+                format!("{prefix}{}. {} ({})", i + 1, email, name),
+                style,
+            )));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(hints_line(&[
+        ("Type", "Filter"),
+        ("\u{2191}\u{2193}", "Navigate"),
+        ("Enter", "Select"),
+        ("Esc", "Home"),
+    ]));
+
+    app.content_height = lines.len() as u16;
+    app.visible_height = area.height;
+
+    let paragraph = Paragraph::new(lines).scroll((app.scroll_offset, 0));
+    frame.render_widget(paragraph, area);
 }
 
 fn draw_metadata(frame: &mut Frame, app: &AppState, area: Rect) {

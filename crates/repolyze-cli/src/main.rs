@@ -23,12 +23,13 @@ fn main() -> anyhow::Result<()> {
             let format = args
                 .format
                 .unwrap_or_else(|| crate::args::OutputFormat::default_for_view(&args.view));
-            let output = run::run_analyze(&repos, &args.view, &format)?;
+            let output = run::run_analyze(&repos, &args.view, &format, args.email.as_deref())?;
             write_output(&output, args.output.as_deref())?;
         }
         Some(Commands::Compare(args)) => {
             let format: crate::args::OutputFormat = args.format.into();
-            let output = run::run_analyze(&args.repos, &crate::args::AnalyzeView::All, &format)?;
+            let output =
+                run::run_analyze(&args.repos, &crate::args::AnalyzeView::All, &format, None)?;
             write_output(&output, args.output.as_deref())?;
         }
     }

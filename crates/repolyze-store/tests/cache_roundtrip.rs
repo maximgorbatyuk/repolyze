@@ -60,6 +60,7 @@ fn make_analysis() -> RepositoryAnalysis {
                 lines_deleted: 4,
                 net_lines: 8,
                 files_touched: 2,
+                file_extensions: std::collections::BTreeMap::new(),
                 active_days: 2,
                 first_commit: "2025-01-01T09:00:00+00:00".to_string(),
                 last_commit: "2025-01-15T10:00:00+00:00".to_string(),

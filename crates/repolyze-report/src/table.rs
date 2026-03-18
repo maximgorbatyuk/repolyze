@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use repolyze_core::analytics::RepoComparisonRow;
-use repolyze_core::model::{RepositoryAnalysis, UserActivityRow, UsersContributionRow};
+use repolyze_core::model::{ContributionRow, RepositoryAnalysis, UserActivityRow, UserEffortData};
 
-pub const USERS_CONTRIBUTION_TITLE: &str = "Users contribution";
-pub const USERS_CONTRIBUTION_DESC: &str =
+pub const CONTRIBUTION_TITLE: &str = "Contribution";
+pub const CONTRIBUTION_DESC: &str =
     "Per-contributor commit counts, lines modified, and files touched.";
 
 pub const ACTIVITY_TITLE: &str = "Most active days and hours";
@@ -17,6 +17,10 @@ pub const HEATMAP_DESC: &str = "Daily commit activity over the past year, groupe
 pub const COMPARE_REPOS_TITLE: &str = "Compare repositories";
 pub const COMPARE_REPOS_DESC: &str =
     "Side-by-side comparison of repository activity and commit frequency.";
+
+pub const USER_EFFORT_TITLE: &str = "User effort";
+pub const USER_EFFORT_DESC: &str =
+    "Detailed activity and productivity metrics for a single contributor.";
 
 /// Build a summary header showing period, repo count, folder, mode, and elapsed time.
 pub fn render_analysis_header(
@@ -103,12 +107,12 @@ fn format_duration(d: Duration) -> String {
     }
 }
 
-pub fn render_users_contribution_table(rows: &[UsersContributionRow]) -> String {
+pub fn render_contribution_table(rows: &[ContributionRow]) -> String {
     if rows.is_empty() {
         return "No contributor data available.".to_string();
     }
 
-    let mut out = format!("{USERS_CONTRIBUTION_DESC}\n\n");
+    let mut out = format!("{CONTRIBUTION_DESC}\n\n");
 
     let headers = &[
         "Email",
@@ -276,6 +280,70 @@ fn repo_row(r: &RepoComparisonRow) -> Vec<String> {
     ]
 }
 
+pub fn render_user_effort_table(data: &UserEffortData) -> String {
+    let mut out = format!("{USER_EFFORT_DESC}\n\n");
+    out.push_str(&format!("User:   {} ({})\n\n", data.email, data.name));
+
+    let ext_str = if data.top_extensions.is_empty() {
+        "N/A".to_string()
+    } else {
+        data.top_extensions
+            .iter()
+            .map(|(ext, count)| format!("{ext} ({count})"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    let rows: Vec<(&str, String)> = vec![
+        ("First commit", data.first_commit.clone()),
+        ("Latest commit", data.last_commit.clone()),
+        (
+            "Most active weekday",
+            format!(
+                "{} ({:.2} C/D)",
+                data.most_active_weekday, data.most_active_weekday_commits_per_day
+            ),
+        ),
+        (
+            "Least active weekday",
+            format!(
+                "{} ({:.2} C/D)",
+                data.least_active_weekday, data.least_active_weekday_commits_per_day
+            ),
+        ),
+        (
+            "Average commits per day",
+            format!("{:.2}", data.average_commits_per_day),
+        ),
+        (
+            "Average files per commit",
+            format!("{:.2}", data.avg_files_per_commit),
+        ),
+        (
+            "Average files per day",
+            format!("{:.2}", data.avg_files_per_day),
+        ),
+        (
+            "Average lines modified/commit",
+            format!("{:.2}", data.avg_lines_per_commit),
+        ),
+        (
+            "Average lines modified/day",
+            format!("{:.2}", data.avg_lines_per_day),
+        ),
+        ("Top file extensions", ext_str),
+    ];
+
+    let headers = &["Metric", "Value"];
+    let right_align = &[false, false];
+    let data_rows: Vec<Vec<String>> = rows
+        .into_iter()
+        .map(|(k, v)| vec![k.to_string(), v])
+        .collect();
+    out.push_str(&render_plain_table(headers, &data_rows, right_align, None));
+    out
+}
+
 fn render_plain_table(
     headers: &[&str],
     data: &[Vec<String>],
@@ -363,8 +431,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn render_users_contribution_table_uses_rf8_headers() {
-        let rows = vec![UsersContributionRow {
+    fn render_contribution_table_uses_rf8_headers() {
+        let rows = vec![ContributionRow {
             email: "alice@example.com".to_string(),
             commits: 5,
             lines_modified: 42,
@@ -372,7 +440,7 @@ mod tests {
             files_touched: 4,
         }];
 
-        let table = render_users_contribution_table(&rows);
+        let table = render_contribution_table(&rows);
 
         assert!(table.contains("Email"));
         assert!(table.contains("Commits"));
@@ -385,16 +453,16 @@ mod tests {
     }
 
     #[test]
-    fn render_users_contribution_table_right_aligns_numbers() {
+    fn render_contribution_table_right_aligns_numbers() {
         let rows = vec![
-            UsersContributionRow {
+            ContributionRow {
                 email: "alice@example.com".to_string(),
                 commits: 100,
                 lines_modified: 5000,
                 lines_per_commit: 50.0,
                 files_touched: 20,
             },
-            UsersContributionRow {
+            ContributionRow {
                 email: "bob@example.com".to_string(),
                 commits: 5,
                 lines_modified: 42,
@@ -403,7 +471,7 @@ mod tests {
             },
         ];
 
-        let table = render_users_contribution_table(&rows);
+        let table = render_contribution_table(&rows);
         // Total row should be present
         assert!(table.contains("Total"));
         assert!(table.contains("105")); // 100 + 5
@@ -439,7 +507,7 @@ mod tests {
     #[test]
     fn render_empty_table_returns_helpful_message() {
         assert_eq!(
-            render_users_contribution_table(&[]),
+            render_contribution_table(&[]),
             "No contributor data available."
         );
         assert_eq!(
@@ -463,6 +531,7 @@ mod tests {
                     lines_deleted: 0,
                     net_lines: 1,
                     files_touched: 1,
+                    file_extensions: std::collections::BTreeMap::new(),
                     active_days: 1,
                     first_commit: "2025-01-01T09:10:11+00:00".to_string(),
                     last_commit: "2025-01-15T10:20:30+00:00".to_string(),
@@ -480,5 +549,43 @@ mod tests {
         assert!(header.contains("2025-01-15 10:20:30"));
         assert!(header.contains("Folder:    /tmp/repo"));
         assert!(header.contains("Mode:      Single repository"));
+    }
+
+    #[test]
+    fn render_user_effort_table_format() {
+        let data = repolyze_core::model::UserEffortData {
+            name: "Alice".to_string(),
+            email: "alice@example.com".to_string(),
+            first_commit: "2024-03-01".to_string(),
+            last_commit: "2025-03-15".to_string(),
+            most_active_weekday: "Monday".to_string(),
+            most_active_weekday_commits_per_day: 2.50,
+            average_commits_per_day: 1.75,
+            least_active_weekday: "Sunday".to_string(),
+            least_active_weekday_commits_per_day: 1.00,
+            avg_files_per_commit: 3.20,
+            avg_files_per_day: 5.60,
+            avg_lines_per_commit: 45.30,
+            avg_lines_per_day: 79.28,
+            top_extensions: vec![
+                ("rs".to_string(), 142),
+                ("md".to_string(), 28),
+                ("toml".to_string(), 12),
+            ],
+        };
+
+        let table = render_user_effort_table(&data);
+
+        assert!(table.contains("alice@example.com"));
+        assert!(table.contains("First commit"));
+        assert!(table.contains("2024-03-01"));
+        assert!(table.contains("Latest commit"));
+        assert!(table.contains("2025-03-15"));
+        assert!(table.contains("Monday (2.50 C/D)"));
+        assert!(table.contains("Sunday (1.00 C/D)"));
+        assert!(table.contains("1.75"));
+        assert!(table.contains("rs (142), md (28), toml (12)"));
+        assert!(!table.contains('|'));
+        assert!(table.contains("---"));
     }
 }
