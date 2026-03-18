@@ -356,7 +356,6 @@
       color: var(--text-muted);
       padding: 40px 0;
       font-size: 0.8rem;
-      text-align: center;
       line-height: 2;
     }
 
@@ -369,15 +368,74 @@
       text-decoration: underline;
     }
 
-    .footer-privacy {
-      color: var(--text-terminal);
-      margin-top: 16px;
+    .footer-columns {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 2rem;
+      text-align: left;
+    }
+
+    .footer-logo {
+      color: var(--accent-blue);
+      font-size: clamp(0.35rem, 1.8vw, 0.65rem);
+      line-height: 1.2;
+      margin-bottom: 12px;
+      display: inline-block;
+      text-align: left;
+    }
+
+    .footer-col-title {
+      font-weight: 700;
       font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+      color: var(--text-terminal);
+    }
+
+    .footer-columns ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .footer-columns ul li {
+      margin-bottom: 6px;
+    }
+
+    .footer-slogan {
+      color: var(--text-terminal);
+      font-weight: 700;
+    }
+
+    .footer-version {
+      font-size: 0.7rem;
+      opacity: 0.6;
+    }
+
+    footer hr {
+      border: none;
+      border-top: 1px solid rgba(255, 255, 255, 0.15);
+      margin: 32px 0 24px;
+    }
+
+    .footer-credit {
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-terminal);
+    }
+
+    .footer-heart {
+      color: #ea580c;
+    }
+
+    .back-to-top-wrap {
+      text-align: center;
+      margin-top: 12px;
     }
 
     .back-to-top {
       display: inline-block;
-      margin-top: 16px;
       color: var(--text-muted);
       text-decoration: none;
       font-size: 0.75rem;
@@ -442,6 +500,15 @@
 
       section {
         padding: 48px 0;
+      }
+
+      .footer-columns {
+        grid-template-columns: 1fr;
+        text-align: center;
+      }
+
+      .footer-columns .footer-logo {
+        text-align: center;
       }
     }
 
@@ -760,12 +827,41 @@ Total                             54           16028            296.81          
   <!-- Footer -->
   <footer>
     <div class="container">
-      <p>Repolyze v0.1.3 &middot; MIT License</p>
-      <p><a href="https://github.com/maximgorbatyuk/repolyze" target="_blank" rel="noopener">github.com/maximgorbatyuk/repolyze</a></p>
-      <p>Author: <a href="https://github.com/maximgorbatyuk" target="_blank" rel="noopener">maximgorbatyuk</a></p>
-      <p class="footer-privacy">Built with Rust. Analyzed locally. No data leaves your machine.
-        &middot; <a href="https://github.com/maximgorbatyuk/repolyze/blob/main/PRIVACY-POLICY.md" target="_blank" rel="noopener">Privacy Policy</a></p>
-      <a href="#top" class="back-to-top" aria-label="Back to top">^ top</a>
+      <div class="footer-columns">
+        <div>
+          <pre class="footer-logo" role="img" aria-label="Repolyze">  ____                  _
+ |  _ \ ___ _ __   ___ | |_   _ _______
+ | |_) / _ \ '_ \ / _ \| | | | |_  / _ \
+ |  _ &lt;  __/ |_) | (_) | | |_| |/ /  __/
+ |_| \_\___| .__/ \___/|_|\__, /___\___|
+            |_|            |___/</pre>
+          <p class="footer-slogan">Know your code better.</p>
+          <p>Analyzed locally. No data leaves your machine.</p>
+          <p class="footer-version">v0.1.3</p>
+        </div>
+        <div>
+          <h3 class="footer-col-title">Our projects</h3>
+          <ul>
+            <li><a href="#">Project one</a></li>
+            <li><a href="#">Project two</a></li>
+            <li><a href="#">Project three</a></li>
+            <li><a href="#">Project four</a></li>
+            <li><a href="#">Project five</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="footer-col-title">Github</h3>
+          <ul>
+            <li><a href="https://github.com/maximgorbatyuk/repolyze/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a></li>
+            <li><a href="https://github.com/maximgorbatyuk/repolyze/blob/main/PRIVACY-POLICY.md" target="_blank" rel="noopener">Privacy policy</a></li>
+            <li><a href="https://github.com/maximgorbatyuk/repolyze/issues" target="_blank" rel="noopener">Issues</a></li>
+            <li><a href="https://github.com/maximgorbatyuk/repolyze/releases" target="_blank" rel="noopener">Releases</a></li>
+          </ul>
+        </div>
+      </div>
+      <hr>
+      <p class="footer-credit">Made with <span class="footer-heart" aria-label="love">♥</span> and plenty of coffee breaks by <a href="https://mgorbatyuk.dev" target="_blank" rel="noopener">Maxim Gorbatyuk</a></p>
+      <p class="back-to-top-wrap"><a href="#top" class="back-to-top" aria-label="Back to top">^ top</a></p>
     </div>
   </footer>
 
