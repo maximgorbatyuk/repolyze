@@ -11,9 +11,9 @@ Repolyze is a Rust CLI/TUI tool for analyzing local Git repositories. It ships a
 Rust workspace with one binary crate and multiple library crates:
 
 - **repolyze-cli** — Binary entrypoint, `clap` command parsing, launches TUI or runs subcommands
-- **repolyze-tui** — TUI app state, event loop, rendering (thin presentation layer, no domain logic)
-- **repolyze-core** — Shared domain types (`AnalysisRequest`, `RepositoryTarget`, `RepositoryAnalysis`, `HeatmapData`), service traits (`GitAnalyzer`, `MetricsAnalyzer`), input validation, error types, aggregation, analytics builders (contribution rows, activity rows, heatmap, repo comparison), `date_util` module (date arithmetic without chrono)
-- **repolyze-git** — Git subprocess backend, commit history parsing, contribution stats, activity summaries
+- **repolyze-tui** — TUI app state, event loop, rendering (thin presentation layer, no domain logic). Includes Git Tools screens (branch cleanup with repo picker and progress tracking) and contributor picker for user effort view
+- **repolyze-core** — Shared domain types (`AnalysisRequest`, `RepositoryTarget`, `RepositoryAnalysis`, `HeatmapData`, `UserEffortData`), service traits (`GitAnalyzer`, `MetricsAnalyzer`), input validation, error types, aggregation, analytics builders (contribution rows, activity rows, heatmap, repo comparison, user effort, `get_contributor_emails`), `date_util` module (date arithmetic without chrono)
+- **repolyze-git** — Git subprocess backend, commit history parsing, contribution stats, activity summaries, branch management (`branches` module: list merged/stale branches, delete with protected-branch guard)
 - **repolyze-metrics** — `.gitignore`-aware repo walking, file/line/byte counting, extension breakdowns
 - **repolyze-report** — JSON, Markdown, and plain-text table report rendering. Table renderer (`table.rs`) provides `render_plain_table` and specialized functions for contribution, activity, heatmap, and repo comparison output
 - **repolyze-store** — SQLite cache (`rusqlite`), database bootstrap, migrations, snapshot read/write queries
@@ -121,7 +121,7 @@ Rules:
 - Header row is always left-aligned
 - Numeric columns are right-aligned
 - Dash separator after header and before totals row
-- Totals row only on Users contribution table
+- Totals row only on contribution table
 - Summary header (period, project count, folder, mode, elapsed) precedes every table output
 
 ## Rust 2024 Edition Gotchas
