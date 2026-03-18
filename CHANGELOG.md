@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-03-18
+
+### Added
+
+- **Git Tools menu**: New top-level TUI screen with two branch-cleanup tools — "Remove merged branches" (deletes local+remote branches already merged into a chosen base branch) and "Remove stale branches" (deletes branches with no activity for N days). Includes repo picker for multi-repo workspaces, branch listing with local/remote indicators, confirmation before deletion, and progress screen with per-branch success/failure status. Protected branches (`main`, `master`, `dev`, `develop`, `production`, etc.) are never deleted.
+- **User effort deep-dive**: New `analyze user-effort --email <email>` CLI subcommand and "User effort" TUI view. Shows per-contributor metrics: first/last commit dates, most/least active weekday with commits-per-day, average commits/files/lines per day and per commit, and top 3 file extensions by touch count. TUI includes a filterable contributor picker with type-to-search.
+- **File extension tracking**: `ContributorStats` now records a `file_extensions` map (`BTreeMap<String, u64>`) counting files touched per extension. Populated during Git log parsing and merged across repositories.
+- **Contributor picker screen**: TUI `UserSelect` screen lets users search/filter contributors by email or name, then select one for the user effort view. Supports keyboard navigation and scroll clamping.
+
+### Changed
+
+- **Renamed `UsersContribution` → `Contribution`**: CLI view enum, model type, analytics builder, table renderer, and all constants renamed from `UsersContribution`/`users_contribution` to `Contribution`/`contribution` for brevity. CLI subcommand is now `analyze contribution`.
+- **Schema version bumped to 3**: Invalidates cached snapshots from v0.1.3 to pick up the new `file_extensions` field.
+- **Analysis elapsed time stored**: `AppState` now tracks `analysis_elapsed` for use in TUI report headers.
+- **Website redesign**: `docs/index.html` refactored with external `style.css`, new OG image (`og.svg`), and updated layout.
+
+### Infrastructure
+
+- `repolyze-git::branches` module: `list_merged_branches`, `list_stale_branches`, `delete_branches` functions with protected-branch guard and origin-only remote support
+- `BranchInfo` and `DeleteResult` types for branch listing and deletion reporting
+- `GitToolsState` and `GitToolsMode` in TUI app state with menu/input/progress screen management
+- `UserEffortData` model type with `Display` impl
+- `get_contributor_emails()` builder in analytics for populating the contributor picker
+- `render_user_effort_table()` in report crate using key-value plain table format
+- `MergedContributor` extended with `name`, `file_extensions`, `first_commit`, `last_commit` fields for cross-repo merging
+
 ## [0.1.3] - 2026-03-17
 
 ### Added
