@@ -80,6 +80,15 @@ pub fn month_abbrev(month: u32) -> &'static str {
     }
 }
 
+/// Format a Unix timestamp (seconds since epoch) as "YYYY-MM-DD".
+pub fn format_unix_timestamp(secs: u64) -> String {
+    let days_since_epoch = (secs / 86400) as i64;
+    // 1970-01-01 is JDN 2440588
+    let jdn = 2_440_588 + days_since_epoch;
+    let (y, m, d) = from_jdn(jdn);
+    format_ymd(y, m, d)
+}
+
 /// Current date as "YYYY-MM-DD" from system time.
 pub fn today_ymd() -> String {
     // Use UNIX_EPOCH + SystemTime to get current UTC date
@@ -155,6 +164,13 @@ mod tests {
         assert_eq!(month_abbrev(6), "Jun");
         assert_eq!(month_abbrev(12), "Dec");
         assert_eq!(month_abbrev(0), "???");
+    }
+
+    #[test]
+    fn format_unix_timestamp_known_dates() {
+        assert_eq!(format_unix_timestamp(0), "1970-01-01");
+        assert_eq!(format_unix_timestamp(1704067200), "2024-01-01");
+        assert_eq!(format_unix_timestamp(1710720000), "2024-03-18");
     }
 
     #[test]

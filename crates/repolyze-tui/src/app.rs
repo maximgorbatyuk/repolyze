@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use repolyze_core::model::{ComparisonReport, HeatmapData, PartialFailure};
+use repolyze_git::branches::BranchInfo;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
@@ -12,6 +13,11 @@ pub enum Screen {
     Analyze,
     Metadata,
     UserSelect,
+    GitToolsMenu,
+    GitToolsRepoSelect,
+    GitToolsInput,
+    GitToolsBranchList,
+    GitToolsProgress,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +42,7 @@ pub const ANALYZE_MENU_ITEMS: [(&str, AnalyzeView); 6] = [
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuItem {
     Analyze,
+    GitTools,
     Help,
     Metadata,
 }
@@ -44,6 +51,7 @@ impl MenuItem {
     pub fn description(&self) -> &'static str {
         match self {
             MenuItem::Analyze => "Analyze one or more repositories",
+            MenuItem::GitTools => "Git repository maintenance tools",
             MenuItem::Help => "Keybindings and usage guide",
             MenuItem::Metadata => "Database info and table row counts",
         }
@@ -52,6 +60,7 @@ impl MenuItem {
     pub fn screen(&self) -> Screen {
         match self {
             MenuItem::Analyze => Screen::AnalyzeMenu,
+            MenuItem::GitTools => Screen::GitToolsMenu,
             MenuItem::Help => Screen::Help,
             MenuItem::Metadata => Screen::Metadata,
         }
@@ -62,8 +71,136 @@ impl fmt::Display for MenuItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MenuItem::Analyze => write!(f, "Analyze"),
+            MenuItem::GitTools => write!(f, "Git Tools"),
             MenuItem::Help => write!(f, "Help"),
             MenuItem::Metadata => write!(f, "Metadata"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitToolsMode {
+    MergedBranches,
+    StaleBranches,
+}
+
+pub const GIT_TOOLS_MENU_ITEMS: [(&str, &str, GitToolsMode); 2] = [
+    (
+        "Remove merged branches",
+        "Delete branches already merged into a base branch",
+        GitToolsMode::MergedBranches,
+    ),
+    (
+        "Remove stale branches",
+        "Delete branches with no activity for N days",
+        GitToolsMode::StaleBranches,
+    ),
+];
+
+#[derive(Debug, Clone)]
+pub struct GitToolsState {
+    pub selected: usize,
+    pub mode: Option<GitToolsMode>,
+    pub input: String,
+    pub branches: Vec<BranchInfo>,
+    pub progress: Vec<(String, bool)>,
+    pub done: bool,
+    pub error: Option<String>,
+    pub scroll: u16,
+    // Workspace discovery
+    pub repos: Vec<PathBuf>,
+    pub selected_repo: Option<PathBuf>,
+    pub repo_select_idx: usize,
+    pub workspace_error: Option<String>,
+}
+
+impl Default for GitToolsState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GitToolsState {
+    pub fn new() -> Self {
+        Self {
+            selected: 0,
+            mode: None,
+            input: String::new(),
+            branches: Vec::new(),
+            progress: Vec::new(),
+            done: false,
+            error: None,
+            scroll: 0,
+            repos: Vec::new(),
+            selected_repo: None,
+            repo_select_idx: 0,
+            workspace_error: None,
+        }
+    }
+
+    /// Full reset — used when leaving Git Tools entirely.
+    pub fn clear(&mut self) {
+        *self = Self::new();
+    }
+
+    /// Reset tool-specific state but keep workspace info (repos, selected_repo)
+    /// and menu cursor (`selected`) so the user returns to the same menu position.
+    pub fn clear_tool(&mut self) {
+        self.mode = None;
+        self.input.clear();
+        self.branches.clear();
+        self.progress.clear();
+        self.done = false;
+        self.error = None;
+        self.scroll = 0;
+    }
+
+    pub fn menu_up(&mut self) {
+        if self.selected > 0 {
+            self.selected -= 1;
+        }
+    }
+
+    pub fn menu_down(&mut self) {
+        if self.selected + 1 < GIT_TOOLS_MENU_ITEMS.len() {
+            self.selected += 1;
+        }
+    }
+
+    pub fn scroll_up(&mut self) {
+        self.scroll = self.scroll.saturating_sub(1);
+    }
+
+    pub fn scroll_down(&mut self, content_height: u16, visible_height: u16) {
+        let max_offset = content_height.saturating_sub(visible_height);
+        if self.scroll < max_offset {
+            self.scroll += 1;
+        }
+    }
+
+    pub fn repo_select_up(&mut self) {
+        if self.repo_select_idx > 0 {
+            self.repo_select_idx -= 1;
+        }
+    }
+
+    pub fn repo_select_down(&mut self) {
+        if self.repo_select_idx + 1 < self.repos.len() {
+            self.repo_select_idx += 1;
+        }
+    }
+
+    /// Keep the selected repo visible in the scrollable viewport.
+    pub fn ensure_repo_visible(&mut self, visible_height: u16) {
+        // 2 header lines (title, blank), 2 footer lines (blank, hints)
+        let header: u16 = 2;
+        let footer: u16 = 2;
+        let item_line = header + self.repo_select_idx as u16;
+        let visible = visible_height.saturating_sub(footer);
+        if visible > 0 && item_line >= self.scroll + visible {
+            self.scroll = item_line - visible + 1;
+        } else if item_line < self.scroll {
+            self.scroll = item_line;
         }
     }
 }
@@ -84,6 +221,14 @@ pub enum AppAction {
     RenderUserEffort,
     LoadMetadata,
     ProbeWorkspace,
+    ListMergedBranches {
+        base_branch: String,
+    },
+    ListStaleBranches {
+        days: u64,
+    },
+    DeleteBranches,
+    ProbeGitToolsWorkspace,
 }
 
 #[derive(Debug, Clone)]
@@ -114,6 +259,7 @@ pub struct AppState {
     pub contributor_selected: usize,
     pub selected_email: Option<String>,
     pub analysis_elapsed: Duration,
+    pub git_tools: GitToolsState,
 }
 
 impl Default for AppState {
@@ -125,7 +271,12 @@ impl Default for AppState {
 impl AppState {
     pub fn new() -> Self {
         Self {
-            menu_items: vec![MenuItem::Analyze, MenuItem::Help, MenuItem::Metadata],
+            menu_items: vec![
+                MenuItem::Analyze,
+                MenuItem::GitTools,
+                MenuItem::Help,
+                MenuItem::Metadata,
+            ],
             selected: 0,
             active_screen: Screen::Home,
             should_quit: false,
@@ -151,6 +302,7 @@ impl AppState {
             contributor_selected: 0,
             selected_email: None,
             analysis_elapsed: Duration::ZERO,
+            git_tools: GitToolsState::new(),
         }
     }
 
@@ -176,6 +328,10 @@ impl AppState {
                 Screen::AnalyzeMenu => {
                     self.pending_action = Some(AppAction::ProbeWorkspace);
                 }
+                Screen::GitToolsMenu => {
+                    self.git_tools.clear();
+                    self.pending_action = Some(AppAction::ProbeGitToolsWorkspace);
+                }
                 _ => {}
             }
             self.active_screen = screen;
@@ -197,6 +353,7 @@ impl AppState {
         self.contributor_filter.clear();
         self.contributor_selected = 0;
         self.selected_email = None;
+        self.git_tools.clear();
     }
 
     pub fn quit(&mut self) {
@@ -322,6 +479,75 @@ impl AppState {
         self.ensure_contributor_visible();
     }
 
+    // --- Git Tools ---
+
+    pub fn git_tools_select(&mut self) {
+        if self.git_tools.workspace_error.is_some() {
+            return;
+        }
+        let (_, _, mode) = &GIT_TOOLS_MENU_ITEMS[self.git_tools.selected];
+        let mode = mode.clone();
+        self.git_tools.clear_tool();
+        self.git_tools.mode = Some(mode.clone());
+        // Pre-fill default for stale branches
+        if mode == GitToolsMode::StaleBranches {
+            self.git_tools.input = "90".to_string();
+        }
+        // Multi-repo: show repo picker first if no repo selected yet
+        if self.git_tools.repos.len() > 1 && self.git_tools.selected_repo.is_none() {
+            self.active_screen = Screen::GitToolsRepoSelect;
+        } else {
+            self.active_screen = Screen::GitToolsInput;
+        }
+    }
+
+    pub fn git_tools_select_repo(&mut self) {
+        if let Some(path) = self.git_tools.repos.get(self.git_tools.repo_select_idx) {
+            self.git_tools.selected_repo = Some(path.clone());
+            self.active_screen = Screen::GitToolsInput;
+        }
+    }
+
+    pub fn git_tools_submit_input(&mut self) {
+        match &self.git_tools.mode {
+            Some(GitToolsMode::MergedBranches) => {
+                let base = self.git_tools.input.trim().to_string();
+                if base.is_empty() {
+                    return;
+                }
+                self.pending_action = Some(AppAction::ListMergedBranches { base_branch: base });
+            }
+            Some(GitToolsMode::StaleBranches) => {
+                let input = self.git_tools.input.trim();
+                let days: u64 = if input.is_empty() {
+                    90
+                } else {
+                    match input.parse() {
+                        Ok(d) if d > 0 => d,
+                        _ => return, // invalid input, ignore
+                    }
+                };
+                self.pending_action = Some(AppAction::ListStaleBranches { days });
+            }
+            None => {}
+        }
+    }
+
+    pub fn git_tools_confirm_delete(&mut self) {
+        if !self.git_tools.branches.is_empty() {
+            self.git_tools.progress.clear();
+            self.git_tools.done = false;
+            self.git_tools.scroll = 0;
+            self.active_screen = Screen::GitToolsProgress;
+            self.pending_action = Some(AppAction::DeleteBranches);
+        }
+    }
+
+    pub fn git_tools_scroll_down(&mut self) {
+        self.git_tools
+            .scroll_down(self.content_height, self.visible_height);
+    }
+
     fn ensure_contributor_visible(&mut self) {
         // 4 header lines (title, blank, filter, blank), 2 footer lines (blank, hints)
         let header_lines: u16 = 4;
@@ -352,7 +578,12 @@ mod tests {
         let app = AppState::new();
         assert_eq!(
             app.menu_items,
-            vec![MenuItem::Analyze, MenuItem::Help, MenuItem::Metadata,]
+            vec![
+                MenuItem::Analyze,
+                MenuItem::GitTools,
+                MenuItem::Help,
+                MenuItem::Metadata,
+            ]
         );
     }
 
@@ -364,10 +595,21 @@ mod tests {
     }
 
     #[test]
-    fn navigate_to_help() {
+    fn navigate_to_git_tools() {
         let mut app = AppState::new();
         app.move_down();
         assert_eq!(app.selected, 1);
+        app.activate_selected();
+        assert_eq!(app.active_screen, Screen::GitToolsMenu);
+        assert_eq!(app.pending_action, Some(AppAction::ProbeGitToolsWorkspace));
+    }
+
+    #[test]
+    fn navigate_to_help() {
+        let mut app = AppState::new();
+        app.move_down();
+        app.move_down();
+        assert_eq!(app.selected, 2);
         app.activate_selected();
         assert_eq!(app.active_screen, Screen::Help);
     }
@@ -377,7 +619,8 @@ mod tests {
         let mut app = AppState::new();
         app.move_down();
         app.move_down();
-        assert_eq!(app.selected, 2);
+        app.move_down();
+        assert_eq!(app.selected, 3);
         app.activate_selected();
         assert_eq!(app.active_screen, Screen::Metadata);
         assert_eq!(app.pending_action, Some(AppAction::LoadMetadata));
@@ -389,7 +632,7 @@ mod tests {
         for _ in 0..10 {
             app.move_down();
         }
-        assert_eq!(app.selected, 2);
+        assert_eq!(app.selected, 3);
     }
 
     #[test]
@@ -467,6 +710,7 @@ mod tests {
     fn menu_item_screen_mapping() {
         assert_eq!(MenuItem::Help.screen(), Screen::Help);
         assert_eq!(MenuItem::Analyze.screen(), Screen::AnalyzeMenu);
+        assert_eq!(MenuItem::GitTools.screen(), Screen::GitToolsMenu);
         assert_eq!(MenuItem::Metadata.screen(), Screen::Metadata);
     }
 
@@ -520,7 +764,12 @@ mod tests {
 
     #[test]
     fn menu_items_have_descriptions() {
-        for item in &[MenuItem::Analyze, MenuItem::Help, MenuItem::Metadata] {
+        for item in &[
+            MenuItem::Analyze,
+            MenuItem::GitTools,
+            MenuItem::Help,
+            MenuItem::Metadata,
+        ] {
             assert!(!item.description().is_empty());
         }
     }
@@ -569,5 +818,151 @@ mod tests {
         assert_eq!(app.selected_email, Some("bob@example.com".to_string()));
         assert_eq!(app.active_screen, Screen::Analyze);
         assert_eq!(app.pending_action, Some(AppAction::RenderUserEffort));
+    }
+
+    #[test]
+    fn git_tools_select_merged_transitions_to_input() {
+        let mut app = AppState::new();
+        app.active_screen = Screen::GitToolsMenu;
+        app.git_tools.repos = vec![PathBuf::from("/tmp/repo")];
+        app.git_tools.selected_repo = Some(PathBuf::from("/tmp/repo"));
+        app.git_tools.selected = 0;
+        app.git_tools_select();
+        assert_eq!(app.active_screen, Screen::GitToolsInput);
+        assert_eq!(app.git_tools.mode, Some(GitToolsMode::MergedBranches));
+        assert!(app.git_tools.input.is_empty());
+    }
+
+    #[test]
+    fn git_tools_select_stale_prefills_default() {
+        let mut app = AppState::new();
+        app.active_screen = Screen::GitToolsMenu;
+        app.git_tools.repos = vec![PathBuf::from("/tmp/repo")];
+        app.git_tools.selected_repo = Some(PathBuf::from("/tmp/repo"));
+        app.git_tools.selected = 1;
+        app.git_tools_select();
+        assert_eq!(app.active_screen, Screen::GitToolsInput);
+        assert_eq!(app.git_tools.mode, Some(GitToolsMode::StaleBranches));
+        assert_eq!(app.git_tools.input, "90");
+    }
+
+    #[test]
+    fn git_tools_submit_merged_creates_action() {
+        let mut app = AppState::new();
+        app.git_tools.mode = Some(GitToolsMode::MergedBranches);
+        app.git_tools.input = "main".to_string();
+        app.git_tools_submit_input();
+        assert_eq!(
+            app.pending_action,
+            Some(AppAction::ListMergedBranches {
+                base_branch: "main".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn git_tools_submit_stale_creates_action() {
+        let mut app = AppState::new();
+        app.git_tools.mode = Some(GitToolsMode::StaleBranches);
+        app.git_tools.input = "60".to_string();
+        app.git_tools_submit_input();
+        assert_eq!(
+            app.pending_action,
+            Some(AppAction::ListStaleBranches { days: 60 })
+        );
+    }
+
+    #[test]
+    fn git_tools_submit_empty_merged_is_ignored() {
+        let mut app = AppState::new();
+        app.git_tools.mode = Some(GitToolsMode::MergedBranches);
+        app.git_tools.input = "  ".to_string();
+        app.git_tools_submit_input();
+        assert!(app.pending_action.is_none());
+    }
+
+    #[test]
+    fn git_tools_submit_invalid_days_is_ignored() {
+        let mut app = AppState::new();
+        app.git_tools.mode = Some(GitToolsMode::StaleBranches);
+        app.git_tools.input = "abc".to_string();
+        app.git_tools_submit_input();
+        assert!(app.pending_action.is_none());
+    }
+
+    #[test]
+    fn git_tools_clear_resets_state() {
+        let mut app = AppState::new();
+        app.git_tools.mode = Some(GitToolsMode::MergedBranches);
+        app.git_tools.input = "main".to_string();
+        app.git_tools.done = true;
+        app.git_tools.repos = vec![PathBuf::from("/tmp/repo")];
+        app.git_tools.clear();
+        assert!(app.git_tools.mode.is_none());
+        assert!(app.git_tools.input.is_empty());
+        assert!(!app.git_tools.done);
+        assert!(app.git_tools.repos.is_empty());
+    }
+
+    #[test]
+    fn git_tools_clear_tool_preserves_repos() {
+        let mut app = AppState::new();
+        app.git_tools.repos = vec![PathBuf::from("/tmp/a"), PathBuf::from("/tmp/b")];
+        app.git_tools.selected_repo = Some(PathBuf::from("/tmp/a"));
+        app.git_tools.mode = Some(GitToolsMode::MergedBranches);
+        app.git_tools.input = "main".to_string();
+        app.git_tools.done = true;
+        app.git_tools.clear_tool();
+        // Tool state is reset
+        assert!(app.git_tools.mode.is_none());
+        assert!(app.git_tools.input.is_empty());
+        assert!(!app.git_tools.done);
+        // Workspace state is preserved
+        assert_eq!(app.git_tools.repos.len(), 2);
+        assert_eq!(app.git_tools.selected_repo, Some(PathBuf::from("/tmp/a")));
+    }
+
+    #[test]
+    fn git_tools_select_blocked_on_workspace_error() {
+        let mut app = AppState::new();
+        app.active_screen = Screen::GitToolsMenu;
+        app.git_tools.workspace_error = Some("No repos".to_string());
+        app.git_tools_select();
+        // Should stay on menu, not transition
+        assert_eq!(app.active_screen, Screen::GitToolsMenu);
+    }
+
+    #[test]
+    fn git_tools_multi_repo_shows_picker() {
+        let mut app = AppState::new();
+        app.active_screen = Screen::GitToolsMenu;
+        app.git_tools.repos = vec![PathBuf::from("/tmp/a"), PathBuf::from("/tmp/b")];
+        // No selected_repo yet
+        app.git_tools.selected = 0;
+        app.git_tools_select();
+        assert_eq!(app.active_screen, Screen::GitToolsRepoSelect);
+    }
+
+    #[test]
+    fn git_tools_multi_repo_skips_picker_when_repo_already_selected() {
+        let mut app = AppState::new();
+        app.active_screen = Screen::GitToolsMenu;
+        app.git_tools.repos = vec![PathBuf::from("/tmp/a"), PathBuf::from("/tmp/b")];
+        app.git_tools.selected_repo = Some(PathBuf::from("/tmp/a"));
+        app.git_tools.selected = 0;
+        app.git_tools_select();
+        assert_eq!(app.active_screen, Screen::GitToolsInput);
+    }
+
+    #[test]
+    fn git_tools_select_repo_sets_repo_and_transitions() {
+        let mut app = AppState::new();
+        app.git_tools.repos = vec![PathBuf::from("/tmp/a"), PathBuf::from("/tmp/b")];
+        app.git_tools.mode = Some(GitToolsMode::MergedBranches);
+        app.git_tools.repo_select_idx = 1;
+        app.active_screen = Screen::GitToolsRepoSelect;
+        app.git_tools_select_repo();
+        assert_eq!(app.git_tools.selected_repo, Some(PathBuf::from("/tmp/b")));
+        assert_eq!(app.active_screen, Screen::GitToolsInput);
     }
 }

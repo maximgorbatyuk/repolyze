@@ -9,7 +9,9 @@ use ratatui::{
 use repolyze_core::model::HeatmapData;
 use repolyze_report::table::{HEATMAP_DESC, HEATMAP_TITLE};
 
-use crate::app::{ANALYZE_MENU_ITEMS, AnalyzeView, AppState, Screen};
+use crate::app::{
+    ANALYZE_MENU_ITEMS, AnalyzeView, AppState, GIT_TOOLS_MENU_ITEMS, GitToolsMode, Screen,
+};
 
 const LOGO: &str = r#"
   ____                  _
@@ -45,6 +47,11 @@ pub fn draw(frame: &mut Frame, app: &mut AppState) {
         Screen::Analyze => draw_analyze(frame, app, area),
         Screen::Metadata => draw_metadata(frame, app, area),
         Screen::UserSelect => draw_user_select(frame, &mut *app, area),
+        Screen::GitToolsMenu => draw_git_tools_menu(frame, app, area),
+        Screen::GitToolsRepoSelect => draw_git_tools_repo_select(frame, &mut *app, area),
+        Screen::GitToolsInput => draw_git_tools_input(frame, app, area),
+        Screen::GitToolsBranchList => draw_git_tools_branch_list(frame, app, area),
+        Screen::GitToolsProgress => draw_git_tools_progress(frame, app, area),
     }
 }
 
@@ -159,9 +166,10 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         Line::from("   q         Quit"),
         Line::from(""),
         Line::from(" Screens:"),
-        Line::from("   Analyze   Analyze one or more repositories"),
-        Line::from("   Help      This screen"),
-        Line::from("   Metadata  Database info and table row counts"),
+        Line::from("   Analyze    Analyze one or more repositories"),
+        Line::from("   Git Tools  Git repository maintenance tools"),
+        Line::from("   Help       This screen"),
+        Line::from("   Metadata   Database info and table row counts"),
     ];
 
     lines.push(Line::from(""));
@@ -492,5 +500,356 @@ fn draw_metadata(frame: &mut Frame, app: &AppState, area: Rect) {
     lines.push(hints_line(&[("Esc", "Home"), ("Q", "Quit")]));
 
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, area);
+}
+
+fn draw_git_tools_menu(frame: &mut Frame, app: &AppState, area: Rect) {
+    let mut lines = vec![
+        Line::from(Span::styled(
+            " Git Tools",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+
+    if let Some(err) = &app.git_tools.workspace_error {
+        lines.push(Line::from(Span::styled(
+            format!(" {err}"),
+            Style::default().fg(Color::Red),
+        )));
+        lines.push(Line::from(""));
+        lines.push(hints_line(&[("Esc", "Home"), ("Q", "Quit")]));
+    } else {
+        // Show workspace info
+        if !app.git_tools.repos.is_empty() {
+            let repo_count = app.git_tools.repos.len();
+            let mode = if repo_count == 1 {
+                "Single repository".to_string()
+            } else {
+                format!("{repo_count} repositories")
+            };
+            lines.push(Line::from(vec![
+                Span::styled("   Repos:  ", Style::default().fg(Color::DarkGray)),
+                Span::raw(mode),
+            ]));
+            if let Some(repo) = &app.git_tools.selected_repo {
+                let name = repo
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| repo.to_string_lossy().to_string());
+                lines.push(Line::from(vec![
+                    Span::styled("   Active: ", Style::default().fg(Color::DarkGray)),
+                    Span::raw(name),
+                ]));
+            }
+            lines.push(Line::from(""));
+        }
+
+        for (i, (label, desc, _)) in GIT_TOOLS_MENU_ITEMS.iter().enumerate() {
+            let is_selected = i == app.git_tools.selected;
+            let (prefix, style) = if is_selected {
+                (
+                    "\u{27a4} ",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                ("  ", Style::default())
+            };
+
+            let item_name = format!("{prefix}{}. {label}", i + 1);
+            let padding = " ".repeat(34usize.saturating_sub(item_name.len()));
+
+            lines.push(Line::from(vec![
+                Span::styled(item_name, style),
+                Span::raw(padding),
+                Span::styled(*desc, Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+
+        lines.push(Line::from(""));
+        if app.git_tools.repos.len() > 1 && app.git_tools.selected_repo.is_some() {
+            lines.push(Line::from(Span::styled(
+                " Esc Home to change repository",
+                Style::default().fg(Color::DarkGray),
+            )));
+            lines.push(Line::from(""));
+        }
+        lines.push(hints_line(&[
+            ("\u{2191}\u{2193}", "Navigate"),
+            ("Enter", "Select"),
+            ("Esc", "Home"),
+            ("Q", "Quit"),
+        ]));
+    }
+
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, area);
+}
+
+fn draw_git_tools_repo_select(frame: &mut Frame, app: &mut AppState, area: Rect) {
+    let mut lines = vec![
+        Line::from(Span::styled(
+            " Git Tools \u{2014} Select Repository",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+
+    for (i, path) in app.git_tools.repos.iter().enumerate() {
+        let is_selected = i == app.git_tools.repo_select_idx;
+        let (prefix, style) = if is_selected {
+            (
+                "\u{27a4} ",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else {
+            ("  ", Style::default())
+        };
+
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string_lossy().to_string());
+        let full_path = path.to_string_lossy();
+
+        lines.push(Line::from(vec![
+            Span::styled(format!("{prefix}{}. {name}", i + 1), style),
+            Span::styled(
+                format!("  ({full_path})"),
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(hints_line(&[
+        ("\u{2191}\u{2193}", "Navigate"),
+        ("Enter", "Select"),
+        ("Esc", "Back"),
+        ("Q", "Quit"),
+    ]));
+
+    app.content_height = lines.len() as u16;
+    app.visible_height = area.height;
+
+    let paragraph = Paragraph::new(lines).scroll((app.git_tools.scroll, 0));
+    frame.render_widget(paragraph, area);
+}
+
+fn draw_git_tools_input(frame: &mut Frame, app: &AppState, area: Rect) {
+    let mode_label = match &app.git_tools.mode {
+        Some(GitToolsMode::MergedBranches) => "Remove Merged Branches",
+        Some(GitToolsMode::StaleBranches) => "Remove Stale Branches",
+        None => "Git Tools",
+    };
+
+    let mut lines = vec![
+        Line::from(Span::styled(
+            format!(" Git Tools \u{2014} {mode_label}"),
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+
+    // Show which repo is targeted
+    if let Some(repo) = &app.git_tools.selected_repo {
+        let name = repo
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| repo.to_string_lossy().to_string());
+        lines.push(Line::from(vec![
+            Span::styled("   Repo:  ", Style::default().fg(Color::DarkGray)),
+            Span::raw(name),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    if app.is_loading {
+        let frame_idx = app.spinner_frame % SPINNER_FRAMES.len();
+        let spinner = SPINNER_FRAMES[frame_idx];
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {spinner}"), Style::default().fg(Color::Cyan)),
+            Span::styled(
+                " Scanning branches...".to_string(),
+                Style::default().fg(Color::Yellow),
+            ),
+        ]));
+    } else if let Some(err) = &app.git_tools.error {
+        lines.push(Line::from(Span::styled(
+            format!(" Error: {err}"),
+            Style::default().fg(Color::Red),
+        )));
+        lines.push(Line::from(""));
+        lines.push(hints_line(&[("Esc", "Back")]));
+    } else {
+        let prompt = match &app.git_tools.mode {
+            Some(GitToolsMode::MergedBranches) => " Enter base branch name:",
+            Some(GitToolsMode::StaleBranches) => " Enter number of days (default: 90):",
+            None => " Input:",
+        };
+
+        lines.push(Line::from(Span::styled(
+            prompt,
+            Style::default().fg(Color::DarkGray),
+        )));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::raw(" > "),
+            Span::raw(&app.git_tools.input),
+            Span::styled("_", Style::default().fg(Color::Yellow)),
+        ]));
+
+        lines.push(Line::from(""));
+        lines.push(hints_line(&[("Enter", "Confirm"), ("Esc", "Back")]));
+    }
+
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, area);
+}
+
+fn draw_git_tools_branch_list(frame: &mut Frame, app: &mut AppState, area: Rect) {
+    let mode_label = match &app.git_tools.mode {
+        Some(GitToolsMode::MergedBranches) => "Merged Branches",
+        Some(GitToolsMode::StaleBranches) => "Stale Branches",
+        None => "Branches",
+    };
+
+    let mut lines = vec![
+        Line::from(Span::styled(
+            format!(" Git Tools \u{2014} {mode_label}"),
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+
+    if app.git_tools.branches.is_empty() {
+        lines.push(Line::from(Span::styled(
+            " No branches to remove.",
+            Style::default().fg(Color::DarkGray),
+        )));
+        lines.push(Line::from(""));
+        lines.push(hints_line(&[("Esc", "Back")]));
+    } else {
+        lines.push(Line::from(Span::styled(
+            format!(
+                " The following {} branch(es) will be deleted:",
+                app.git_tools.branches.len()
+            ),
+            Style::default().fg(Color::Yellow),
+        )));
+        lines.push(Line::from(""));
+
+        for branch in &app.git_tools.branches {
+            let mut parts: Vec<Span> = vec![Span::raw(format!("   {}", branch.name))];
+
+            let mut tags = Vec::new();
+            if branch.has_local {
+                tags.push("local".to_string());
+            }
+            if branch.has_remote {
+                tags.push("remote".to_string());
+            }
+            if let Some(date) = &branch.last_activity {
+                tags.push(date.clone());
+            }
+            if !tags.is_empty() {
+                parts.push(Span::styled(
+                    format!("  ({})", tags.join(", ")),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+
+            lines.push(Line::from(parts));
+        }
+
+        lines.push(Line::from(""));
+        lines.push(hints_line(&[
+            ("y/Enter", "Confirm delete"),
+            ("n/Esc", "Cancel"),
+            ("\u{2191}\u{2193}", "Scroll"),
+        ]));
+    }
+
+    app.content_height = lines.len() as u16;
+    app.visible_height = area.height;
+
+    let paragraph = Paragraph::new(lines).scroll((app.git_tools.scroll, 0));
+    frame.render_widget(paragraph, area);
+}
+
+fn draw_git_tools_progress(frame: &mut Frame, app: &mut AppState, area: Rect) {
+    let mut lines = vec![
+        Line::from(Span::styled(
+            " Git Tools \u{2014} Deleting Branches",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+
+    if !app.git_tools.done && app.git_tools.progress.is_empty() {
+        let frame_idx = app.spinner_frame % SPINNER_FRAMES.len();
+        let spinner = SPINNER_FRAMES[frame_idx];
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {spinner}"), Style::default().fg(Color::Cyan)),
+            Span::styled(
+                " Starting deletion...".to_string(),
+                Style::default().fg(Color::Yellow),
+            ),
+        ]));
+    }
+
+    for (name, success) in &app.git_tools.progress {
+        let (icon, color) = if *success {
+            ("\u{2713}", Color::Green) // checkmark
+        } else {
+            ("\u{2717}", Color::Red) // x mark
+        };
+        lines.push(Line::from(vec![
+            Span::styled(format!("   {icon} "), Style::default().fg(color)),
+            Span::raw(name),
+        ]));
+    }
+
+    if app.git_tools.done {
+        let total = app.git_tools.progress.len();
+        let success_count = app.git_tools.progress.iter().filter(|(_, ok)| *ok).count();
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            format!(" Done. {success_count}/{total} branch(es) deleted."),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(""));
+        lines.push(hints_line(&[
+            ("Enter/Esc", "Back"),
+            ("\u{2191}\u{2193}", "Scroll"),
+            ("Q", "Quit"),
+        ]));
+    } else if !app.git_tools.progress.is_empty() {
+        let frame_idx = app.spinner_frame % SPINNER_FRAMES.len();
+        let spinner = SPINNER_FRAMES[frame_idx];
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {spinner}"), Style::default().fg(Color::Cyan)),
+            Span::styled(
+                format!(
+                    " Deleting... ({}/{})",
+                    app.git_tools.progress.len(),
+                    app.git_tools.branches.len()
+                ),
+                Style::default().fg(Color::Yellow),
+            ),
+        ]));
+    }
+
+    app.content_height = lines.len() as u16;
+    app.visible_height = area.height;
+
+    let paragraph = Paragraph::new(lines).scroll((app.git_tools.scroll, 0));
     frame.render_widget(paragraph, area);
 }

@@ -22,6 +22,7 @@ use repolyze_core::input::{resolve_input, resolve_inputs_with_failures};
 use repolyze_core::model::{ComparisonReport, HeatmapData};
 use repolyze_core::service::analyze_targets_with_store;
 use repolyze_git::backend::GitCliBackend;
+use repolyze_git::branches;
 use repolyze_metrics::FilesystemMetricsBackend;
 use repolyze_report::table::{
     ACTIVITY_TITLE, COMPARE_REPOS_TITLE, CONTRIBUTION_TITLE, render_analysis_header,
@@ -29,7 +30,7 @@ use repolyze_report::table::{
     render_user_effort_table,
 };
 
-use app::{AnalyzeView, AppAction, AppState};
+use app::{AnalyzeView, AppAction, AppState, GitToolsMode};
 
 struct AnalysisCompletion {
     report: ComparisonReport,
@@ -38,6 +39,18 @@ struct AnalysisCompletion {
     failure_count: usize,
     error_message: Option<String>,
     elapsed: Duration,
+}
+
+enum BranchListResult {
+    Ok(Vec<branches::BranchInfo>),
+    Err(String),
+}
+
+/// Per-branch deletion progress sent from the background thread.
+struct BranchDeleteProgress {
+    name: String,
+    success: bool,
+    done: bool, // true on the final message
 }
 
 pub fn run() -> anyhow::Result<()> {
@@ -49,6 +62,8 @@ pub fn run() -> anyhow::Result<()> {
 
     let mut app = AppState::new();
     let mut bg_receiver: Option<mpsc::Receiver<AnalysisCompletion>> = None;
+    let mut branch_list_rx: Option<mpsc::Receiver<BranchListResult>> = None;
+    let mut branch_delete_rx: Option<mpsc::Receiver<BranchDeleteProgress>> = None;
 
     loop {
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
@@ -64,8 +79,12 @@ pub fn run() -> anyhow::Result<()> {
         if app.is_loading {
             app.spinner_frame = app.spinner_frame.wrapping_add(1);
         }
+        // Also animate spinner during deletion progress
+        if branch_delete_rx.is_some() && !app.git_tools.done {
+            app.spinner_frame = app.spinner_frame.wrapping_add(1);
+        }
 
-        // Start pending analysis on background thread
+        // Start pending actions on background thread
         if let Some(action) = app.take_action() {
             match action {
                 AppAction::StartAnalyze { paths, view } => {
@@ -87,6 +106,68 @@ pub fn run() -> anyhow::Result<()> {
                 AppAction::ProbeWorkspace => {
                     app.workspace_info = Some(probe_workspace());
                 }
+                AppAction::ProbeGitToolsWorkspace => {
+                    probe_git_tools_workspace(&mut app);
+                }
+                AppAction::ListMergedBranches { base_branch } => {
+                    let repo = app
+                        .git_tools
+                        .selected_repo
+                        .clone()
+                        .expect("selected_repo must be set before listing branches");
+                    app.is_loading = true;
+                    app.spinner_frame = 0;
+                    let (tx, rx) = mpsc::channel();
+                    std::thread::spawn(move || {
+                        match branches::list_merged_branches(&repo, &base_branch) {
+                            Ok(list) => tx.send(BranchListResult::Ok(list)).ok(),
+                            Err(e) => tx.send(BranchListResult::Err(e.to_string())).ok(),
+                        };
+                    });
+                    branch_list_rx = Some(rx);
+                }
+                AppAction::ListStaleBranches { days } => {
+                    let repo = app
+                        .git_tools
+                        .selected_repo
+                        .clone()
+                        .expect("selected_repo must be set before listing branches");
+                    app.is_loading = true;
+                    app.spinner_frame = 0;
+                    let (tx, rx) = mpsc::channel();
+                    std::thread::spawn(move || {
+                        match branches::list_stale_branches(&repo, days) {
+                            Ok(list) => tx.send(BranchListResult::Ok(list)).ok(),
+                            Err(e) => tx.send(BranchListResult::Err(e.to_string())).ok(),
+                        };
+                    });
+                    branch_list_rx = Some(rx);
+                }
+                AppAction::DeleteBranches => {
+                    let repo = app
+                        .git_tools
+                        .selected_repo
+                        .clone()
+                        .expect("selected_repo must be set before deleting branches");
+                    let branch_list = app.git_tools.branches.clone();
+                    let force = app.git_tools.mode == Some(GitToolsMode::StaleBranches);
+                    let (tx, rx) = mpsc::channel();
+                    std::thread::spawn(move || {
+                        let total = branch_list.len();
+                        for (i, branch) in branch_list.iter().enumerate() {
+                            let result = branches::delete_branch(&repo, branch, force);
+                            let success =
+                                result.local_ok.unwrap_or(true) && result.remote_ok.unwrap_or(true);
+                            tx.send(BranchDeleteProgress {
+                                name: result.branch,
+                                success,
+                                done: i + 1 == total,
+                            })
+                            .ok();
+                        }
+                    });
+                    branch_delete_rx = Some(rx);
+                }
             }
         }
 
@@ -103,6 +184,63 @@ pub fn run() -> anyhow::Result<()> {
                     app.is_loading = false;
                     app.status_message = "Analysis failed unexpectedly".to_string();
                     bg_receiver = None;
+                }
+            }
+        }
+
+        // Check for completed branch listing
+        if let Some(rx) = &branch_list_rx {
+            match rx.try_recv() {
+                Ok(result) => {
+                    app.is_loading = false;
+                    match result {
+                        BranchListResult::Ok(list) => {
+                            app.git_tools.branches = list;
+                            app.active_screen = app::Screen::GitToolsBranchList;
+                        }
+                        BranchListResult::Err(msg) => {
+                            app.git_tools.error = Some(msg);
+                            // Stay on input screen to show error
+                        }
+                    }
+                    branch_list_rx = None;
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    app.is_loading = false;
+                    app.git_tools.error = Some("Branch scan failed unexpectedly".to_string());
+                    branch_list_rx = None;
+                }
+            }
+        }
+
+        // Check for branch deletion progress
+        if let Some(rx) = &branch_delete_rx {
+            // If user cancelled (Esc), drop the receiver and stop processing
+            if app.git_tools.done {
+                branch_delete_rx = None;
+            } else {
+                // Drain all available messages this frame
+                loop {
+                    match rx.try_recv() {
+                        Ok(progress) => {
+                            let is_done = progress.done;
+                            app.git_tools
+                                .progress
+                                .push((progress.name, progress.success));
+                            if is_done {
+                                app.git_tools.done = true;
+                                branch_delete_rx = None;
+                                break;
+                            }
+                        }
+                        Err(mpsc::TryRecvError::Empty) => break,
+                        Err(mpsc::TryRecvError::Disconnected) => {
+                            app.git_tools.done = true;
+                            branch_delete_rx = None;
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -296,6 +434,55 @@ where
         AppAction::ProbeWorkspace => {
             app.workspace_info = Some(probe_workspace());
         }
+        AppAction::ProbeGitToolsWorkspace => {
+            probe_git_tools_workspace(app);
+        }
+        AppAction::ListMergedBranches { base_branch } => {
+            let repo = app
+                .git_tools
+                .selected_repo
+                .clone()
+                .expect("selected_repo must be set before listing branches");
+            match branches::list_merged_branches(&repo, &base_branch) {
+                Ok(list) => {
+                    app.git_tools.branches = list;
+                    app.active_screen = app::Screen::GitToolsBranchList;
+                }
+                Err(e) => {
+                    app.git_tools.error = Some(e.to_string());
+                }
+            }
+        }
+        AppAction::ListStaleBranches { days } => {
+            let repo = app
+                .git_tools
+                .selected_repo
+                .clone()
+                .expect("selected_repo must be set before listing branches");
+            match branches::list_stale_branches(&repo, days) {
+                Ok(list) => {
+                    app.git_tools.branches = list;
+                    app.active_screen = app::Screen::GitToolsBranchList;
+                }
+                Err(e) => {
+                    app.git_tools.error = Some(e.to_string());
+                }
+            }
+        }
+        AppAction::DeleteBranches => {
+            let repo = app
+                .git_tools
+                .selected_repo
+                .clone()
+                .expect("selected_repo must be set before deleting branches");
+            let force = app.git_tools.mode == Some(GitToolsMode::StaleBranches);
+            for branch in &app.git_tools.branches {
+                let result = branches::delete_branch(&repo, branch, force);
+                let success = result.local_ok.unwrap_or(true) && result.remote_ok.unwrap_or(true);
+                app.git_tools.progress.push((result.branch, success));
+            }
+            app.git_tools.done = true;
+        }
     }
 
     Ok(())
@@ -486,6 +673,23 @@ fn probe_workspace() -> app::WorkspaceInfo {
             is_single_repo: false,
             repo_count: 0,
         },
+    }
+}
+
+fn probe_git_tools_workspace(app: &mut AppState) {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    match resolve_input(&cwd) {
+        Ok(targets) => {
+            let repos: Vec<PathBuf> = targets.into_iter().map(|t| t.root).collect();
+            if repos.len() == 1 {
+                app.git_tools.selected_repo = Some(repos[0].clone());
+            }
+            app.git_tools.repos = repos;
+        }
+        Err(_) => {
+            app.git_tools.workspace_error =
+                Some("No git repositories found in this directory.".to_string());
+        }
     }
 }
 
