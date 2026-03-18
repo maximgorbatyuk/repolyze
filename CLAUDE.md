@@ -36,7 +36,7 @@ cargo fmt --all --check                  # format check
 cargo clippy --workspace --all-targets --all-features -- -D warnings  # lint
 ```
 
-A `justfile` exists with the same targets (`just verify`, `just test`, etc.) but `just` may not be installed. The `cargo xtask` alias is not configured — use `cargo run --manifest-path xtask/Cargo.toml -- verify` directly.
+A `justfile` exists with the same targets (`just verify`, `just test`, etc.) but `just` may not be installed. The `cargo xtask` alias is configured in `.cargo/config.toml`.
 
 ## CLI Usage
 
@@ -47,8 +47,9 @@ repolyze analyze                         # analyze current directory, JSON to st
 repolyze analyze -D /path/to/repo        # analyze a specific directory
 repolyze analyze --repo ./a --repo ./b   # analyze specific repos
 repolyze analyze --format md --output report.md  # Markdown to file
-repolyze analyze users-contribution --format table  # contribution table to stdout
-repolyze analyze activity --format table            # activity table to stdout
+repolyze analyze contribution --format table                  # contribution table to stdout
+repolyze analyze activity --format table                      # activity table to stdout
+repolyze analyze user-effort --email user@example.com         # per-user deep-dive to stdout
 repolyze compare --repo ./a --repo ./b   # compare multiple repos
 ```
 
