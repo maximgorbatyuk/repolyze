@@ -5,20 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Repolyze — Know your code better.</title>
   <meta name="description" content="A Rust CLI/TUI tool for analyzing local Git repositories. Contributor stats, activity heatmaps, file metrics, JSON & Markdown export.">
+  <meta name="keywords" content="git analytics, repository analysis, git stats, contributor statistics, activity heatmap, code metrics, rust cli, terminal ui, tui, git log, commit history, developer tools, open source, homebrew">
+  <meta name="author" content="Maxim Gorbatyuk">
+  <meta name="robots" content="index, follow">
+  <meta property="og:site_name" content="Repolyze">
+  <meta property="og:locale" content="en_US">
   <meta property="og:title" content="Repolyze — Know your code better.">
   <meta property="og:description" content="A Rust CLI/TUI tool for analyzing local Git repositories. Contributor stats, activity heatmaps, file metrics, JSON & Markdown export.">
-  <meta property="og:url" content="https://mgorbatyuk.dev/repolyze/">
+  <meta property="og:url" content="https://repolyze.app/">
   <meta property="og:type" content="website">
-  <meta property="og:image" content="https://mgorbatyuk.dev/repolyze/og.svg">
+  <meta property="og:image" content="https://repolyze.app/og.svg">
   <meta property="og:image:alt" content="Repolyze — Know your code better.">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Repolyze — Know your code better.">
   <meta name="twitter:description" content="A Rust CLI/TUI tool for analyzing local Git repositories. Contributor stats, activity heatmaps, file metrics, JSON & Markdown export.">
-  <meta name="twitter:image" content="https://mgorbatyuk.dev/repolyze/og.svg">
-  <link rel="canonical" href="https://mgorbatyuk.dev/repolyze/">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:;">
+  <meta name="twitter:image" content="https://repolyze.app/og.svg">
+  <link rel="canonical" href="https://repolyze.app/">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://www.google-analytics.com https://www.googletagmanager.com;">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90' font-family='monospace' fill='%233b82f6'>R</text></svg>">
   <script type="application/ld+json">
   {
@@ -28,7 +33,7 @@
     "description": "A Rust CLI/TUI tool for analyzing local Git repositories. Contributor stats, activity heatmaps, file metrics, JSON and Markdown export.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "macOS, Linux",
-    "url": "https://mgorbatyuk.dev/repolyze/",
+    "url": "https://repolyze.app/",
     "downloadUrl": "https://github.com/maximgorbatyuk/repolyze/releases",
     "softwareVersion": "0.1.4",
     "license": "https://opensource.org/licenses/MIT",
@@ -41,8 +46,51 @@
       "@type": "Offer",
       "price": "0",
       "priceCurrency": "USD"
-    }
+    },
+    "sourceCodeRepository": "https://github.com/maximgorbatyuk/repolyze",
+    "programmingLanguage": "Rust",
+    "keywords": ["git analytics", "repository analysis", "contributor stats", "activity heatmap", "code metrics", "rust cli", "terminal ui"]
   }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is Repolyze?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Repolyze is a Rust CLI/TUI tool for analyzing local Git repositories. It provides contributor statistics, activity heatmaps, file metrics, and supports JSON and Markdown export. All analysis runs locally — no data leaves your machine."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How do I install Repolyze?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "On macOS, install via Homebrew: brew install maximgorbatyuk/tap/repolyze. Cross-platform, install via Cargo: cargo install repolyze. Supports macOS (Apple Silicon and Intel) and Linux x86_64."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Who is Repolyze for?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Repolyze is built for team leads tracking contributor effort, tech leads comparing repositories across an engineering portfolio, and individual contributors understanding their own contribution patterns."
+        }
+      }
+    ]
+  }
+  </script>
+  <!-- Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-QBYMCME6CP"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-QBYMCME6CP');
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

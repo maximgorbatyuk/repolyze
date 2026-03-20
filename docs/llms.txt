@@ -1,0 +1,43 @@
+# Repolyze
+
+> Know your code better.
+
+Repolyze is a Rust CLI/TUI tool for analyzing local Git repositories. All analysis runs locally — no data leaves your machine.
+
+## What it does
+
+- Contributor statistics: commits, lines added/deleted, net contribution, files touched, active days per contributor
+- Activity heatmaps: GitHub-style contribution grid showing daily commit intensity over the past year
+- File metrics: .gitignore-aware repo walking, file/line/byte counting, extension breakdowns
+- Multi-repo analysis: analyze one or many repositories in a single run with batch processing
+- Repository comparison: side-by-side ranking of repositories by commits per day with per-weekday breakdowns
+- User effort view: per-contributor deep-dive with commit frequency by weekday and hour
+- Smart caching: SQLite-backed cache so re-analyzing unchanged repos is instant
+- Export formats: JSON, Markdown, and plain-text table output
+
+## Who it's for
+
+- Team leads tracking contributor effort across repositories
+- Tech leads comparing codebases and making data-driven decisions about engineering portfolios
+- Individual contributors understanding their own contribution patterns
+
+## Installation
+
+- macOS (Homebrew): brew install maximgorbatyuk/tap/repolyze
+- Cross-platform (Cargo): cargo install repolyze
+- Supported platforms: macOS (Apple Silicon & Intel), Linux x86_64
+
+## Usage
+
+- `repolyze` — launch interactive TUI (default)
+- `repolyze analyze` — analyze current directory, JSON to stdout
+- `repolyze analyze --format md --output report.md` — Markdown export
+- `repolyze analyze users-contribution --format table` — contributor table
+- `repolyze compare --repo ./a --repo ./b` — compare repositories
+
+## Links
+
+- Website: https://repolyze.app
+- Source code: https://github.com/maximgorbatyuk/repolyze
+- Releases: https://github.com/maximgorbatyuk/repolyze/releases
+- License: MIT
