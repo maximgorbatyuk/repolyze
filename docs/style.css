@@ -17,7 +17,7 @@
   --prompt-green: #22c55e;
   --border-color: #e2e8f0;
   --font-mono: 'JetBrains Mono', monospace;
-  --dot-color: rgba(15, 23, 42, 0.12);
+  --dot-color: rgba(15, 23, 42, 0.07);
   --dot-size: 1.25px;
   --dot-spacing: 22px;
 }
