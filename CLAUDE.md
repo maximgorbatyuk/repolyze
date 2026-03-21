@@ -63,13 +63,13 @@ cargo xtask release --version 0.1.0            # prepare release
 cargo dist plan                                # verify cargo-dist config
 ```
 
-Release artifacts are built by GitHub Actions on version tags via `cargo-dist`. Targets: macOS (aarch64, x86_64) and Linux (x86_64). Homebrew formula publishes to `maximgorbatyuk/homebrew-tap`.
+Release artifacts are built by GitHub Actions on version tags via `cargo-dist`. Targets: macOS (aarch64, x86_64), Linux (x86_64), and Windows (x86_64). Installers: shell script (macOS/Linux), PowerShell script (Windows), Homebrew formula (`maximgorbatyuk/homebrew-tap`), and MSI (Windows).
 
 ## Database
 
 - Dev builds (`cargo run`): `target/debug/repolyze-dev.db`
 - Release builds (installed binary): `~/.repolyze/repolyze.db`
-- Detection uses `cfg!(debug_assertions)` — no env var needed
+- Detection uses `cfg!(debug_assertions)` — no env var needed. Path resolution uses the `home` crate for cross-platform home directory lookup
 - Tests always use `tempfile::tempdir()`, never the real DB
 
 ## Design Constraints
@@ -95,7 +95,8 @@ Release artifacts are built by GitHub Actions on version tags via `cargo-dist`. 
 - Follow test-driven development: write failing test → implement → verify green
 - Commit after each task using conventional commits (`feat:`, `fix:`, `chore:`, `test:`, `docs:`)
 - CI runs on push to `main`/`dev` and PRs to `main`: fmt check, clippy, build, test
-- Release via `cargo-dist` with GitHub Actions; macOS + Linux only (no Windows in v1)
+- Release via `cargo-dist` with GitHub Actions; macOS, Linux, and Windows
+- CI runs Windows build + test alongside Linux checks
 
 ## Table Output Format
 
@@ -131,3 +132,4 @@ Rules:
 - Use `std::slice::from_ref(&x)` not `&[x.clone()]`
 - Data record constructors with 8+ args need `#[allow(clippy::too_many_arguments)]`
 - `rusqlite::Connection` methods take `&self` — store wrapper methods should too
+- crossterm on Windows fires both `KeyEventKind::Press` and `KeyEventKind::Release` — always filter `key.kind == KeyEventKind::Press` in the event loop
