@@ -6,6 +6,13 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+authors.workspace = true
+
+[package.metadata.wix]
+upgrade-guid = "35351E51-FD82-43AE-9C8D-FA3FF847C424"
+path-guid = "C541DB8B-A6B3-4EB9-98CE-474FE6C36C53"
+license = false
+eula = false
 
 [[bin]]
 name = "repolyze"

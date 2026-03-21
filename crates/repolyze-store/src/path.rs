@@ -28,9 +28,12 @@ pub fn resolve_database_path() -> std::io::Result<PathBuf> {
     if cfg!(debug_assertions) {
         database_path_for_dev()
     } else {
-        let home = std::env::var("HOME").map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::NotFound, format!("HOME not set: {e}"))
+        let home = home::home_dir().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "could not determine home directory",
+            )
         })?;
-        Ok(database_path_from_home(&home))
+        Ok(database_path_from_home(&home.to_string_lossy()))
     }
 }

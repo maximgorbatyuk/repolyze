@@ -9,7 +9,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use crossterm::{
-    event::{Event, poll as poll_event, read as read_event},
+    event::{Event, KeyEventKind, poll as poll_event, read as read_event},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -71,6 +71,7 @@ pub fn run() -> anyhow::Result<()> {
         // Non-blocking poll: 100ms timeout allows spinner animation at ~10fps
         if poll_event(Duration::from_millis(100))?
             && let Event::Key(key) = read_event()?
+            && key.kind == KeyEventKind::Press
         {
             event::handle_key(&mut app, key);
         }

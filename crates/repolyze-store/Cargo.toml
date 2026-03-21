@@ -6,6 +6,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+home = "0.5"
 repolyze-core = { path = "../repolyze-core" }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde_json = "1"
