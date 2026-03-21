@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-03-21
+
+### Added
+
+- **Windows support**: Build target `x86_64-pc-windows-msvc` with MSI installer and PowerShell install script. Release workflow now produces Windows `.zip`, `.msi`, and `.ps1` artifacts alongside macOS and Linux builds.
+- **Windows CI job**: Build and test on `windows-latest` runner on every push/PR.
+- **Website SEO**: Added `robots.txt`, `sitemap.xml`, `llms.txt`, and CNAME for custom domain.
+
+### Fixed
+
+- **TUI duplicate key events on Windows**: Added `KeyEventKind::Press` filter to prevent crossterm from firing handlers twice (Press + Release) on Windows.
+- **Database path resolution on Windows**: Replaced `HOME` env var (Unix-only) with the `home` crate for cross-platform home directory lookup.
+
 ## [0.1.4] - 2026-03-18
 
 ### Added
