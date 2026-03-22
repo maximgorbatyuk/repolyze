@@ -2,23 +2,66 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::app::{AppState, Screen};
 
+/// Map non-Latin characters to their QWERTY physical-key equivalents.
+/// This lets shortcuts (q, j, k, y, n, …) work regardless of keyboard layout.
+fn normalize_to_qwerty(c: char) -> char {
+    match c {
+        // Russian (ЙЦУКЕН) → QWERTY
+        'й' => 'q',
+        'ц' => 'w',
+        'у' => 'e',
+        'к' => 'r',
+        'е' => 't',
+        'н' => 'y',
+        'г' => 'u',
+        'ш' => 'i',
+        'щ' => 'o',
+        'з' => 'p',
+        'ф' => 'a',
+        'ы' => 's',
+        'в' => 'd',
+        'а' => 'f',
+        'п' => 'g',
+        'р' => 'h',
+        'о' => 'j',
+        'л' => 'k',
+        'д' => 'l',
+        'я' => 'z',
+        'ч' => 'x',
+        'с' => 'c',
+        'м' => 'v',
+        'и' => 'b',
+        'т' => 'n',
+        'ь' => 'm',
+        _ => c,
+    }
+}
+
 pub fn handle_key(app: &mut AppState, key: KeyEvent) {
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         app.quit();
         return;
     }
 
+    // Normalize non-Latin chars to QWERTY for shortcut-based screens.
+    // Text-input screens (UserSelect, GitToolsInput) pass raw characters through.
+    let code = match (&app.active_screen, key.code) {
+        (Screen::UserSelect | Screen::GitToolsInput, _) => key.code,
+        (_, KeyCode::Char(c)) => KeyCode::Char(normalize_to_qwerty(c)),
+        _ => key.code,
+    };
+
     match app.active_screen {
-        Screen::Home => handle_home(app, key.code),
-        Screen::Help | Screen::Metadata => handle_static_screen(app, key.code),
-        Screen::AnalyzeMenu => handle_analyze_menu(app, key.code),
-        Screen::Analyze => handle_results_screen(app, key.code),
-        Screen::UserSelect => handle_user_select(app, key.code),
-        Screen::GitToolsMenu => handle_git_tools_menu(app, key.code),
-        Screen::GitToolsRepoSelect => handle_git_tools_repo_select(app, key.code),
-        Screen::GitToolsInput => handle_git_tools_input(app, key.code),
-        Screen::GitToolsBranchList => handle_git_tools_branch_list(app, key.code),
-        Screen::GitToolsProgress => handle_git_tools_progress(app, key.code),
+        Screen::Home => handle_home(app, code),
+        Screen::Help | Screen::Metadata => handle_static_screen(app, code),
+        Screen::AnalyzeMenu => handle_analyze_menu(app, code),
+        Screen::Analyze => handle_results_screen(app, code),
+        Screen::UserSelect => handle_user_select(app, code),
+        Screen::GitToolsMenu => handle_git_tools_menu(app, code),
+        Screen::GitToolsRepoSelect => handle_git_tools_repo_select(app, code),
+        Screen::GitToolsInput => handle_git_tools_input(app, code),
+        Screen::GitToolsBranchList => handle_git_tools_branch_list(app, code),
+        Screen::GitToolsProgress => handle_git_tools_progress(app, code),
     }
 }
 

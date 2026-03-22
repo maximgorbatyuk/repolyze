@@ -735,6 +735,11 @@ fn draw_git_tools_branch_list(frame: &mut Frame, app: &mut AppState, area: Rect)
         lines.push(hints_line(&[("Esc", "Back")]));
     } else {
         lines.push(Line::from(Span::styled(
+            " Review the branches below, then press y/Enter to delete or n/Esc to cancel.",
+            Style::default().fg(Color::DarkGray),
+        )));
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
             format!(
                 " The following {} branch(es) will be deleted:",
                 app.git_tools.branches.len()
