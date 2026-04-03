@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-04-03
+
+### Added
+
+- **TUI Markdown export**: Press `e` on the Analyze results screen to export the current report as a Markdown file. The file is written to the current directory with a timestamped name (`repolyze-report-YYYY-MM-DD-HHMMSS.md`) to avoid overwriting previous exports. The `e Export` hint appears in the footer once the report is loaded; status bar confirms the full output path or shows an error.
+- **Help screen documents Analyze keybindings**: New "Analyze results" section lists `e` (Export), `j/↓` (Scroll down), and `k/↑` (Scroll up).
+
+### Fixed
+
+- **Compare Repositories section broken in Markdown output**: The "Compare Repositories" section in `--format md` and TUI export was rendered using the TUI plain-text table format (dash separators, no pipes), which does not display as tables in Markdown viewers. Now renders proper `| pipe |` Markdown tables with `###` sub-headings for all three comparison sub-sections (most active, least active, by weekday).
+
 ## [0.1.6] - 2026-03-22
 
 ### Fixed

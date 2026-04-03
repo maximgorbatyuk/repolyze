@@ -106,6 +106,7 @@ fn handle_results_screen(app: &mut AppState, code: KeyCode) {
         KeyCode::Esc => app.go_home(),
         KeyCode::Up | KeyCode::Char('k') => app.scroll_up(),
         KeyCode::Down | KeyCode::Char('j') => app.scroll_down(),
+        KeyCode::Char('e') => app.request_export(),
         _ => {}
     }
 }

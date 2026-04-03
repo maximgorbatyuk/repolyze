@@ -229,6 +229,7 @@ pub enum AppAction {
     },
     DeleteBranches,
     ProbeGitToolsWorkspace,
+    ExportMarkdown,
 }
 
 #[derive(Debug, Clone)]
@@ -439,6 +440,12 @@ impl AppState {
         let max_offset = self.content_height.saturating_sub(self.visible_height);
         if self.scroll_offset < max_offset {
             self.scroll_offset += 1;
+        }
+    }
+
+    pub fn request_export(&mut self) {
+        if self.analysis_result.is_some() && !self.is_loading {
+            self.pending_action = Some(AppAction::ExportMarkdown);
         }
     }
 
@@ -964,5 +971,47 @@ mod tests {
         app.git_tools_select_repo();
         assert_eq!(app.git_tools.selected_repo, Some(PathBuf::from("/tmp/b")));
         assert_eq!(app.active_screen, Screen::GitToolsInput);
+    }
+
+    #[test]
+    fn request_export_ignored_without_analysis_result() {
+        let mut app = AppState::new();
+        app.request_export();
+        assert!(app.pending_action.is_none());
+    }
+
+    #[test]
+    fn request_export_ignored_while_loading() {
+        let mut app = AppState::new();
+        app.analysis_result = Some(ComparisonReport {
+            repositories: vec![],
+            summary: repolyze_core::model::ComparisonSummary {
+                total_contributors: 0,
+                total_commits: 0,
+                total_lines_changed: 0,
+                total_files: 0,
+            },
+            failures: vec![],
+        });
+        app.is_loading = true;
+        app.request_export();
+        assert!(app.pending_action.is_none());
+    }
+
+    #[test]
+    fn request_export_sets_pending_action() {
+        let mut app = AppState::new();
+        app.analysis_result = Some(ComparisonReport {
+            repositories: vec![],
+            summary: repolyze_core::model::ComparisonSummary {
+                total_contributors: 0,
+                total_commits: 0,
+                total_lines_changed: 0,
+                total_files: 0,
+            },
+            failures: vec![],
+        });
+        app.request_export();
+        assert_eq!(app.pending_action, Some(AppAction::ExportMarkdown));
     }
 }

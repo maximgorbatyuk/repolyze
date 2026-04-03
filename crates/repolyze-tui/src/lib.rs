@@ -24,6 +24,7 @@ use repolyze_core::service::analyze_targets_with_store;
 use repolyze_git::backend::GitCliBackend;
 use repolyze_git::branches;
 use repolyze_metrics::FilesystemMetricsBackend;
+use repolyze_report::markdown::render_markdown;
 use repolyze_report::table::{
     ACTIVITY_TITLE, COMPARE_REPOS_TITLE, CONTRIBUTION_TITLE, render_analysis_header,
     render_contribution_table, render_repo_comparison_table, render_user_activity_table,
@@ -109,6 +110,9 @@ pub fn run() -> anyhow::Result<()> {
                 }
                 AppAction::ProbeGitToolsWorkspace => {
                     probe_git_tools_workspace(&mut app);
+                }
+                AppAction::ExportMarkdown => {
+                    export_markdown(&mut app);
                 }
                 AppAction::ListMergedBranches { base_branch } => {
                     let repo = app
@@ -438,6 +442,9 @@ where
         AppAction::ProbeGitToolsWorkspace => {
             probe_git_tools_workspace(app);
         }
+        AppAction::ExportMarkdown => {
+            export_markdown(app);
+        }
         AppAction::ListMergedBranches { base_branch } => {
             let repo = app
                 .git_tools
@@ -516,6 +523,45 @@ fn render_user_effort_for_selected(app: &mut AppState) {
         app.heatmap_data = None;
     }
     app.scroll_offset = 0;
+}
+
+fn export_markdown(app: &mut AppState) {
+    let report = match &app.analysis_result {
+        Some(r) => r,
+        None => {
+            app.status_message = "No report to export".to_string();
+            return;
+        }
+    };
+
+    let markdown = render_markdown(report);
+    let date = repolyze_core::date_util::today_ymd();
+    let time_suffix = {
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+            % 86400;
+        format!(
+            "{:02}{:02}{:02}",
+            secs / 3600,
+            (secs % 3600) / 60,
+            secs % 60
+        )
+    };
+    let filename = format!("repolyze-report-{date}-{time_suffix}.md");
+    let filepath = std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(&filename);
+
+    match std::fs::write(&filepath, &markdown) {
+        Ok(()) => {
+            app.status_message = format!("Exported to {}", filepath.display());
+        }
+        Err(e) => {
+            app.status_message = format!("Export failed: {e}");
+        }
+    }
 }
 
 fn build_metadata_text<F>(open_store_fn: &F) -> String
@@ -811,5 +857,50 @@ mod tests {
 
         let text = app.metadata_text.as_ref().unwrap();
         assert!(text.contains("Failed to open database"));
+    }
+
+    #[test]
+    fn export_markdown_without_result_sets_error_message() {
+        let mut app = AppState::new();
+        export_markdown(&mut app);
+        assert_eq!(app.status_message, "No report to export");
+    }
+
+    #[test]
+    fn export_markdown_writes_file_and_updates_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let mut app = AppState::new();
+        app.analysis_result = Some(ComparisonReport {
+            repositories: vec![],
+            summary: repolyze_core::model::ComparisonSummary {
+                total_contributors: 0,
+                total_commits: 0,
+                total_lines_changed: 0,
+                total_files: 0,
+            },
+            failures: vec![],
+        });
+
+        export_markdown(&mut app);
+
+        // Restore cwd before assertions so cleanup works even on failure
+        std::env::set_current_dir(&original_dir).unwrap();
+
+        assert!(app.status_message.starts_with("Exported to "));
+        assert!(app.status_message.ends_with(".md"));
+
+        // Verify the file was created in the tempdir
+        let files: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
+            .collect();
+        assert_eq!(files.len(), 1);
+
+        let content = std::fs::read_to_string(files[0].path()).unwrap();
+        assert!(content.contains("# Repolyze Analysis Report"));
     }
 }

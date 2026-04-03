@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use repolyze_core::analytics::{build_heatmap_data, build_repo_comparison};
+use repolyze_core::analytics::{RepoComparisonRow, build_heatmap_data, build_repo_comparison};
 use repolyze_core::date_util;
 use repolyze_core::model::{ComparisonReport, ContributorStats, HeatmapData};
 
@@ -155,8 +155,7 @@ pub fn render_markdown(report: &ComparisonReport) -> String {
         let comparison = build_repo_comparison(&report.repositories);
         if comparison.len() >= 2 {
             out.push_str("## Compare Repositories\n\n");
-            out.push_str(&crate::table::render_repo_comparison_table(&comparison));
-            out.push('\n');
+            out.push_str(&render_repo_comparison_markdown(&comparison));
         }
     }
 
@@ -177,6 +176,78 @@ pub fn render_markdown(report: &ComparisonReport) -> String {
         }
         out.push('\n');
     }
+
+    out
+}
+
+const WEEKDAY_NAMES_SHORT: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+fn render_repo_comparison_markdown(rows: &[RepoComparisonRow]) -> String {
+    let mut out = String::new();
+
+    let mut by_cpd: Vec<&RepoComparisonRow> = rows.iter().collect();
+    by_cpd.sort_by(|a, b| {
+        b.commits_per_day
+            .partial_cmp(&a.commits_per_day)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Section 1: Top 3 most active
+    out.push_str("### Most active repositories (commits per active day)\n\n");
+    out.push_str("| Repository | Commits | Active days | C/D |\n");
+    out.push_str("|---|---|---|---|\n");
+    for r in by_cpd.iter().take(3) {
+        out.push_str(&format!(
+            "| {} | {} | {} | {:.2} |\n",
+            r.name, r.total_commits, r.active_days, r.commits_per_day
+        ));
+    }
+    out.push('\n');
+
+    // Section 2: Top 3 least active
+    out.push_str("### Least active repositories (commits per active day)\n\n");
+    out.push_str("| Repository | Commits | Active days | C/D |\n");
+    out.push_str("|---|---|---|---|\n");
+    for r in by_cpd.iter().rev().take(3) {
+        out.push_str(&format!(
+            "| {} | {} | {} | {:.2} |\n",
+            r.name, r.total_commits, r.active_days, r.commits_per_day
+        ));
+    }
+    out.push('\n');
+
+    // Section 3: Top 3 per weekday
+    out.push_str("### Most active repositories by weekday (C/D)\n\n");
+    out.push_str("| Weekday | #1 | #2 | #3 |\n");
+    out.push_str("|---|---|---|---|\n");
+    for (day, day_name) in WEEKDAY_NAMES_SHORT.iter().enumerate() {
+        let mut day_sorted: Vec<&RepoComparisonRow> = rows.iter().collect();
+        day_sorted.sort_by(|a, b| {
+            b.weekday_commits_per_day[day]
+                .partial_cmp(&a.weekday_commits_per_day[day])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let entries: Vec<String> = day_sorted
+            .iter()
+            .take(3)
+            .filter(|r| r.weekday_commits_per_day[day] > 0.0)
+            .map(|r| format!("{} ({:.2})", r.name, r.weekday_commits_per_day[day]))
+            .collect();
+
+        if entries.is_empty() {
+            continue;
+        }
+
+        out.push_str(&format!(
+            "| {} | {} | {} | {} |\n",
+            day_name,
+            entries.first().cloned().unwrap_or_default(),
+            entries.get(1).cloned().unwrap_or_default(),
+            entries.get(2).cloned().unwrap_or_default(),
+        ));
+    }
+    out.push('\n');
 
     out
 }

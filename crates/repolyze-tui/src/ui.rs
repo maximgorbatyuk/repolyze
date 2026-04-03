@@ -165,6 +165,11 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         Line::from("   Esc       Return to Home"),
         Line::from("   q         Quit"),
         Line::from(""),
+        Line::from(" Analyze results:"),
+        Line::from("   e         Export report as Markdown"),
+        Line::from("   j/\u{2193}       Scroll down"),
+        Line::from("   k/\u{2191}       Scroll up"),
+        Line::from(""),
         Line::from(" Screens:"),
         Line::from("   Analyze    Analyze one or more repositories"),
         Line::from("   Git Tools  Git repository maintenance tools"),
@@ -313,11 +318,20 @@ fn draw_analyze(frame: &mut Frame, app: &mut AppState, area: Rect) {
     }
 
     lines.push(Line::from(""));
-    lines.push(hints_line(&[
-        ("\u{2191}\u{2193}", "Scroll"),
-        ("Esc", "Home"),
-        ("Q", "Quit"),
-    ]));
+    if app.analysis_result.is_some() && !app.is_loading {
+        lines.push(hints_line(&[
+            ("\u{2191}\u{2193}", "Scroll"),
+            ("e", "Export"),
+            ("Esc", "Home"),
+            ("Q", "Quit"),
+        ]));
+    } else {
+        lines.push(hints_line(&[
+            ("\u{2191}\u{2193}", "Scroll"),
+            ("Esc", "Home"),
+            ("Q", "Quit"),
+        ]));
+    }
 
     app.content_height = lines.len() as u16;
     app.visible_height = area.height;
