@@ -157,19 +157,39 @@
         <p class="section-subtitle">Everything runs locally. No data leaves your machine.</p>
         <div class="features-grid">
           <div class="feature-card animate-on-scroll">
-            <div class="feature-icon" aria-hidden="true">[&gt;_]</div>
-            <h3>Multi-Repo Analysis</h3>
-            <p>Analyze one or many repositories in a single run. Batch processing with partial failure tolerance.</p>
-          </div>
-          <div class="feature-card animate-on-scroll">
             <div class="feature-icon" aria-hidden="true">{usr}</div>
-            <h3>Contributor Stats</h3>
-            <p>Commits, lines added/deleted, net contribution, files touched, and active days per contributor.</p>
+            <h3>Contribution Statistics</h3>
+            <p>Per-contributor breakdown: total commits, lines added/deleted, average lines per commit, files touched, and active days. Sorted by commit count with a totals row.</p>
           </div>
           <div class="feature-card animate-on-scroll">
             <div class="feature-icon" aria-hidden="true">[##]</div>
-            <h3>Analytics Views</h3>
-            <p>Per-contributor tables with commit frequency by weekday and hour. Abbreviated column headers with legend.</p>
+            <h3>Activity Patterns</h3>
+            <p>Most active weekday and hour per contributor. Average commits per active day and per active hour, both overall and on peak day/hour.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon" aria-hidden="true">[:::.]</div>
+            <h3>Activity Heatmap</h3>
+            <p>GitHub-style 52-week commit grid in the terminal. One cell per day with ASCII intensity levels and month labels for orientation.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon" aria-hidden="true">[usr/]</div>
+            <h3>User Effort Deep-Dive</h3>
+            <p>Detailed profile for a single contributor: date range, most/least active weekday, average commits, files, and lines per day and per commit, top file extensions.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon" aria-hidden="true">[&lt;&gt;]</div>
+            <h3>Repository Comparison</h3>
+            <p>Side-by-side analysis of two or more repos. Rankings by commits per active day, per-weekday breakdowns, and most/least active repository lists.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon" aria-hidden="true">[~/]</div>
+            <h3>Repository Size Metrics</h3>
+            <p>Language-agnostic codebase snapshot respecting .gitignore: file, directory, line, and byte counts, extension breakdown, and top 10 largest files.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon" aria-hidden="true">[git]</div>
+            <h3>Git Tools</h3>
+            <p>Interactive branch cleanup from the TUI. Remove merged or stale branches with confirmation prompts and protected-branch guards.</p>
           </div>
           <div class="feature-card animate-on-scroll">
             <div class="feature-icon" aria-hidden="true">[db]</div>
@@ -177,24 +197,9 @@
             <p>SQLite-backed cache. Re-analyzing unchanged repos is instant. Dirty worktrees always get fresh data.</p>
           </div>
           <div class="feature-card animate-on-scroll">
-            <div class="feature-icon" aria-hidden="true">[~/]</div>
-            <h3>Folder Discovery</h3>
-            <p>Point at a parent directory and all nested Git repositories are discovered and analyzed automatically.</p>
-          </div>
-          <div class="feature-card animate-on-scroll">
-            <div class="feature-icon" aria-hidden="true">[TUI]</div>
-            <h3>Interactive TUI</h3>
-            <p>Full-screen terminal UI with scrollable reports, background analysis, and animated loading spinner.</p>
-          </div>
-          <div class="feature-card animate-on-scroll">
-            <div class="feature-icon" aria-hidden="true">[:::.]</div>
-            <h3>Activity Heatmap</h3>
-            <p>GitHub-style contribution grid showing daily commit intensity over the past year with color-coded legend.</p>
-          </div>
-          <div class="feature-card animate-on-scroll">
-            <div class="feature-icon" aria-hidden="true">[&lt;&gt;]</div>
-            <h3>Repo Comparison</h3>
-            <p>Side-by-side ranking of repositories by commits per day, with per-weekday breakdowns and top 3 lists.</p>
+            <div class="feature-icon" aria-hidden="true">[&gt;_]</div>
+            <h3>TUI and CLI</h3>
+            <p>Full-screen interactive TUI with background analysis and auto-discovery of nested repos. Scriptable CLI with JSON, Markdown, and plain-text table output.</p>
           </div>
         </div>
       </div>
