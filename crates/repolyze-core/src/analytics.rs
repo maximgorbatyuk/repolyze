@@ -5,6 +5,7 @@ use crate::model::{
     ContributionRow, DAYS_IN_WEEK, HEATMAP_MAX_WEEKS, HeatmapData, RepositoryAnalysis,
     UserActivityRow, UserEffortData,
 };
+use crate::settings::Settings;
 
 const WEEKDAY_NAMES: [&str; 7] = [
     "Monday",
@@ -24,11 +25,14 @@ fn most_active_index(arr: &[u32]) -> Option<usize> {
         .map(|(i, _)| i)
 }
 
-pub fn build_contribution_rows(repos: &[RepositoryAnalysis]) -> Vec<ContributionRow> {
-    let merged = merge_activity_by_email(repos);
+pub fn build_contribution_rows(
+    repos: &[RepositoryAnalysis],
+    settings: &Settings,
+) -> Vec<ContributionRow> {
+    let merged = merge_activity_by_email(repos, settings);
     let mut rows: Vec<ContributionRow> = merged
         .into_iter()
-        .map(|(email, m)| {
+        .map(|(identifier, m)| {
             let commits = m.commits;
             let lines_modified = m.lines_added.saturating_add(m.lines_deleted);
             let lines_per_commit = if commits > 0 {
@@ -37,7 +41,7 @@ pub fn build_contribution_rows(repos: &[RepositoryAnalysis]) -> Vec<Contribution
                 0.0
             };
             ContributionRow {
-                email,
+                identifier,
                 commits,
                 lines_modified,
                 lines_per_commit,
@@ -45,18 +49,25 @@ pub fn build_contribution_rows(repos: &[RepositoryAnalysis]) -> Vec<Contribution
             }
         })
         .collect();
-    rows.sort_by(|a, b| b.commits.cmp(&a.commits).then(a.email.cmp(&b.email)));
+    rows.sort_by(|a, b| {
+        b.commits
+            .cmp(&a.commits)
+            .then(a.identifier.cmp(&b.identifier))
+    });
     rows
 }
 
-pub fn build_user_activity_rows(repos: &[RepositoryAnalysis]) -> Vec<UserActivityRow> {
-    let merged = merge_activity_by_email(repos);
+pub fn build_user_activity_rows(
+    repos: &[RepositoryAnalysis],
+    settings: &Settings,
+) -> Vec<UserActivityRow> {
+    let merged = merge_activity_by_email(repos, settings);
     let mut merged: Vec<_> = merged.into_iter().collect();
     merged.sort_by(|a, b| b.1.commits.cmp(&a.1.commits).then(a.0.cmp(&b.0)));
 
     merged
         .into_iter()
-        .map(|(email, m)| {
+        .map(|(identifier, m)| {
             let most_active_weekday_idx = most_active_index(&m.weekday_commits);
             let most_active_hour_idx = most_active_index(&m.hour_commits);
 
@@ -109,7 +120,7 @@ pub fn build_user_activity_rows(repos: &[RepositoryAnalysis]) -> Vec<UserActivit
                 .unwrap_or_else(|| "N/A".to_string());
 
             UserActivityRow {
-                email,
+                identifier,
                 most_active_week_day,
                 average_commits_per_day_in_most_active_day,
                 average_commits_per_day,
@@ -160,13 +171,16 @@ impl Default for MergedContributor {
     }
 }
 
-fn merge_activity_by_email(repos: &[RepositoryAnalysis]) -> HashMap<String, MergedContributor> {
+fn merge_activity_by_email(
+    repos: &[RepositoryAnalysis],
+    settings: &Settings,
+) -> HashMap<String, MergedContributor> {
     let mut map: HashMap<String, MergedContributor> = HashMap::new();
 
     for repo in repos {
         for cs in &repo.contributions.contributors {
-            let email = cs.email.to_lowercase();
-            let entry = map.entry(email).or_default();
+            let key = settings.canonical_key(&cs.email);
+            let entry = map.entry(key).or_default();
             if entry.name.is_empty() {
                 entry.name = cs.name.clone();
             }
@@ -186,8 +200,8 @@ fn merge_activity_by_email(repos: &[RepositoryAnalysis]) -> HashMap<String, Merg
         }
 
         for act in &repo.contributions.activity_by_contributor {
-            let email = act.email.to_lowercase();
-            let entry = map.entry(email).or_default();
+            let key = settings.canonical_key(&act.email);
+            let entry = map.entry(key).or_default();
             for i in 0..7 {
                 entry.weekday_commits[i] =
                     entry.weekday_commits[i].saturating_add(act.weekday_commits[i]);
@@ -283,20 +297,37 @@ fn least_active_index(arr: &[u32]) -> Option<usize> {
         .map(|(i, _)| i)
 }
 
-/// Returns deduplicated `(email, name)` sorted by commit count descending.
-pub fn get_contributor_emails(repos: &[RepositoryAnalysis]) -> Vec<(String, String)> {
-    let merged = merge_activity_by_email(repos);
+/// Returns deduplicated `(identifier, name)` sorted by commit count descending.
+/// When settings map emails to a user name, the identifier is that name.
+pub fn get_contributor_emails(
+    repos: &[RepositoryAnalysis],
+    settings: &Settings,
+) -> Vec<(String, String)> {
+    let merged = merge_activity_by_email(repos, settings);
     let mut entries: Vec<(String, String, u64)> = merged
         .into_iter()
-        .map(|(email, m)| (email, m.name, m.commits))
+        .map(|(key, m)| (key, m.name, m.commits))
         .collect();
     entries.sort_by(|a, b| b.2.cmp(&a.2).then(a.0.cmp(&b.0)));
     entries.into_iter().map(|(e, n, _)| (e, n)).collect()
 }
 
-pub fn build_user_effort_data(repos: &[RepositoryAnalysis], email: &str) -> Option<UserEffortData> {
-    let merged = merge_activity_by_email(repos);
-    let m = merged.get(&email.to_lowercase())?;
+pub fn build_user_effort_data(
+    repos: &[RepositoryAnalysis],
+    identifier: &str,
+    settings: &Settings,
+) -> Option<UserEffortData> {
+    let merged = merge_activity_by_email(repos, settings);
+    // Look up by the identifier as-is first (handles canonical names from settings),
+    // then fall back to lowercased email lookup for backward compat.
+    // Capture the actual map key so we preserve its original casing.
+    let (display_identifier, m) = if let Some(m) = merged.get(identifier) {
+        (identifier.to_string(), m)
+    } else {
+        let lower = identifier.to_lowercase();
+        let m = merged.get(&lower)?;
+        (lower, m)
+    };
 
     let most_active_weekday_idx = most_active_index(&m.weekday_commits);
     let least_active_weekday_idx = least_active_index(&m.weekday_commits);
@@ -364,7 +395,7 @@ pub fn build_user_effort_data(repos: &[RepositoryAnalysis], email: &str) -> Opti
 
     Some(UserEffortData {
         name: m.name.clone(),
-        email: email.to_lowercase(),
+        identifier: display_identifier,
         first_commit: m.first_commit.clone(),
         last_commit: m.last_commit.clone(),
         most_active_weekday: most_active_weekday_idx
@@ -386,15 +417,19 @@ pub fn build_user_effort_data(repos: &[RepositoryAnalysis], email: &str) -> Opti
 
 pub fn build_heatmap_data(
     repos: &[RepositoryAnalysis],
-    email_filter: Option<&str>,
+    filter_key: Option<&str>,
     reference_date: &str,
+    settings: &Settings,
 ) -> HeatmapData {
+    // Resolve the filter to a set of matching emails
+    let allowed_emails: Option<Vec<String>> = filter_key.map(|key| settings.emails_for_key(key));
+
     // Aggregate commits_by_date across all contributors (optionally filtered)
     let mut aggregated: BTreeMap<String, u32> = BTreeMap::new();
     for repo in repos {
         for act in &repo.contributions.activity_by_contributor {
-            if let Some(filter) = email_filter
-                && act.email.to_lowercase() != filter.to_lowercase()
+            if let Some(ref emails) = allowed_emails
+                && !emails.contains(&act.email.to_lowercase())
             {
                 continue;
             }
@@ -607,14 +642,18 @@ mod tests {
         vec![repo_a, repo_b]
     }
 
+    fn no_settings() -> Settings {
+        Settings::default()
+    }
+
     #[test]
     fn build_contribution_rows_merges_by_email_and_sorts_by_commits() {
         let repos = make_report_with_shared_contributor();
 
-        let rows = build_contribution_rows(&repos);
+        let rows = build_contribution_rows(&repos, &no_settings());
 
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].email, "alice@example.com");
+        assert_eq!(rows[0].identifier, "alice@example.com");
         assert_eq!(rows[0].commits, 5);
         assert_eq!(rows[0].lines_modified, 47); // 40 added + 7 deleted
         assert_eq!(rows[0].files_touched, 4);
@@ -626,10 +665,10 @@ mod tests {
         // Total: 3 distinct dates, 5 commits → avg = 5/3
         let repos = make_report_with_shared_contributor();
 
-        let rows = build_user_activity_rows(&repos);
+        let rows = build_user_activity_rows(&repos, &no_settings());
 
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].email, "alice@example.com");
+        assert_eq!(rows[0].identifier, "alice@example.com");
         // 3 distinct dates, 5 commits
         let expected_avg = 5.0 / 3.0;
         assert!((rows[0].average_commits_per_day - expected_avg).abs() < 0.01);
@@ -671,10 +710,10 @@ mod tests {
             15,
         )];
 
-        let rows = build_user_activity_rows(&repos);
+        let rows = build_user_activity_rows(&repos, &no_settings());
 
-        assert_eq!(rows[0].email, "big@example.com");
-        assert_eq!(rows[1].email, "focused@example.com");
+        assert_eq!(rows[0].identifier, "big@example.com");
+        assert_eq!(rows[1].identifier, "focused@example.com");
     }
 
     #[test]
@@ -699,7 +738,7 @@ mod tests {
             3,
         )];
 
-        let data = build_heatmap_data(&repos, None, "2025-01-19");
+        let data = build_heatmap_data(&repos, None, "2025-01-19", &no_settings());
 
         assert!(data.max_count >= 1);
         assert!(data.week_count > 0);
@@ -729,7 +768,12 @@ mod tests {
             2,
         )];
 
-        let data = build_heatmap_data(&repos, Some("alice@example.com"), "2025-01-19");
+        let data = build_heatmap_data(
+            &repos,
+            Some("alice@example.com"),
+            "2025-01-19",
+            &no_settings(),
+        );
         // Only alice's commits should be counted
         assert_eq!(data.max_count, 1);
     }
@@ -737,7 +781,7 @@ mod tests {
     #[test]
     fn build_heatmap_data_empty() {
         let repos: Vec<RepositoryAnalysis> = vec![];
-        let data = build_heatmap_data(&repos, None, "2025-01-19");
+        let data = build_heatmap_data(&repos, None, "2025-01-19", &no_settings());
         assert_eq!(data.max_count, 0);
         assert!(data.week_count > 0);
     }
@@ -745,7 +789,7 @@ mod tests {
     #[test]
     fn build_heatmap_data_has_month_labels() {
         let repos: Vec<RepositoryAnalysis> = vec![];
-        let data = build_heatmap_data(&repos, None, "2025-06-15");
+        let data = build_heatmap_data(&repos, None, "2025-06-15", &no_settings());
         // Should have multiple month labels across 52 weeks
         assert!(data.month_labels.len() >= 12);
     }
@@ -770,7 +814,7 @@ mod tests {
             1,
         )];
 
-        let data = build_heatmap_data(&repos, None, "2025-01-15");
+        let data = build_heatmap_data(&repos, None, "2025-01-15", &no_settings());
         let last_week = data.week_count - 1;
         // Wednesday commit present
         assert_eq!(data.grid[2][last_week], 1);
@@ -813,7 +857,7 @@ mod tests {
     #[test]
     fn get_contributor_emails_deduplicates() {
         let repos = make_report_with_shared_contributor();
-        let emails = get_contributor_emails(&repos);
+        let emails = get_contributor_emails(&repos, &no_settings());
         assert_eq!(emails.len(), 1);
         assert_eq!(emails[0].0, "alice@example.com");
     }
@@ -845,8 +889,8 @@ mod tests {
             4,
         )];
 
-        let effort = build_user_effort_data(&repos, "alice@example.com").unwrap();
-        assert_eq!(effort.email, "alice@example.com");
+        let effort = build_user_effort_data(&repos, "alice@example.com", &no_settings()).unwrap();
+        assert_eq!(effort.identifier, "alice@example.com");
         assert_eq!(effort.most_active_weekday, "Monday");
         assert_eq!(effort.least_active_weekday, "Friday");
         assert!((effort.average_commits_per_day - 2.0).abs() < 0.01); // 4 commits / 2 days
@@ -857,8 +901,8 @@ mod tests {
     #[test]
     fn build_user_effort_data_cross_repo_merge() {
         let repos = make_report_with_shared_contributor();
-        let effort = build_user_effort_data(&repos, "alice@example.com").unwrap();
-        assert_eq!(effort.email, "alice@example.com");
+        let effort = build_user_effort_data(&repos, "alice@example.com", &no_settings()).unwrap();
+        assert_eq!(effort.identifier, "alice@example.com");
         // 5 commits / 3 distinct active dates
         assert!((effort.average_commits_per_day - 5.0 / 3.0).abs() < 0.01);
         // Extensions merged: rs = 2+3 = 5, md = 1, toml = 1
@@ -869,6 +913,6 @@ mod tests {
     #[test]
     fn build_user_effort_data_unknown_email() {
         let repos = make_report_with_shared_contributor();
-        assert!(build_user_effort_data(&repos, "nobody@example.com").is_none());
+        assert!(build_user_effort_data(&repos, "nobody@example.com", &no_settings()).is_none());
     }
 }

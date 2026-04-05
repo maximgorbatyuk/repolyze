@@ -21,6 +21,7 @@ use repolyze_core::analytics::{
 use repolyze_core::input::{resolve_input, resolve_inputs_with_failures};
 use repolyze_core::model::{ComparisonReport, HeatmapData};
 use repolyze_core::service::analyze_targets_with_store;
+use repolyze_core::settings::Settings;
 use repolyze_git::backend::GitCliBackend;
 use repolyze_git::branches;
 use repolyze_metrics::FilesystemMetricsBackend;
@@ -54,7 +55,7 @@ struct BranchDeleteProgress {
     done: bool, // true on the final message
 }
 
-pub fn run() -> anyhow::Result<()> {
+pub fn run(settings: &Settings) -> anyhow::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -92,15 +93,16 @@ pub fn run() -> anyhow::Result<()> {
                 AppAction::StartAnalyze { paths, view } => {
                     app.is_loading = true;
                     app.spinner_frame = 0;
+                    let settings_clone = settings.clone();
                     let (tx, rx) = mpsc::channel();
                     std::thread::spawn(move || {
-                        let result = compute_analysis(paths, view, open_store);
+                        let result = compute_analysis(paths, view, open_store, &settings_clone);
                         tx.send(result).ok();
                     });
                     bg_receiver = Some(rx);
                 }
                 AppAction::RenderUserEffort => {
-                    render_user_effort_for_selected(&mut app);
+                    render_user_effort_for_selected(&mut app, settings);
                 }
                 AppAction::LoadMetadata => {
                     app.metadata_text = Some(build_metadata_text(&open_store));
@@ -112,7 +114,7 @@ pub fn run() -> anyhow::Result<()> {
                     probe_git_tools_workspace(&mut app);
                 }
                 AppAction::ExportMarkdown => {
-                    export_markdown(&mut app);
+                    export_markdown(&mut app, settings);
                 }
                 AppAction::ListMergedBranches { base_branch } => {
                     let repo = app
@@ -180,7 +182,7 @@ pub fn run() -> anyhow::Result<()> {
         if let Some(rx) = &bg_receiver {
             match rx.try_recv() {
                 Ok(completion) => {
-                    apply_analysis_completion(&mut app, completion);
+                    apply_analysis_completion(&mut app, completion, settings);
                     bg_receiver = None;
                 }
                 Err(mpsc::TryRecvError::Empty) => {} // still running
@@ -264,6 +266,7 @@ fn compute_analysis<F>(
     paths: Vec<PathBuf>,
     view: AnalyzeView,
     open_store_fn: F,
+    settings: &Settings,
 ) -> AnalysisCompletion
 where
     F: Fn() -> anyhow::Result<repolyze_store::sqlite::SqliteStore>,
@@ -294,7 +297,7 @@ where
         }
     };
     let start = std::time::Instant::now();
-    let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store, "tui");
+    let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store, "tui", settings);
     let elapsed = start.elapsed();
     let failure_count = input_failures.len() + report.failures.len();
 
@@ -311,15 +314,15 @@ where
     let today = repolyze_core::date_util::today_ymd();
     let (table_body, heatmap_data) = match view {
         AnalyzeView::Contribution => {
-            let rows = build_contribution_rows(&report.repositories);
+            let rows = build_contribution_rows(&report.repositories, settings);
             (render_contribution_table(&rows), None)
         }
         AnalyzeView::Activity => {
-            let rows = build_user_activity_rows(&report.repositories);
+            let rows = build_user_activity_rows(&report.repositories, settings);
             (render_user_activity_table(&rows), None)
         }
         AnalyzeView::ActivityHeatmap => {
-            let hm = build_heatmap_data(&report.repositories, None, &today);
+            let hm = build_heatmap_data(&report.repositories, None, &today, settings);
             (String::new(), Some(hm))
         }
         AnalyzeView::UserEffort => {
@@ -331,8 +334,8 @@ where
             (render_repo_comparison_table(&comparison), None)
         }
         AnalyzeView::All => {
-            let contrib_rows = build_contribution_rows(&report.repositories);
-            let activity_rows = build_user_activity_rows(&report.repositories);
+            let contrib_rows = build_contribution_rows(&report.repositories, settings);
+            let activity_rows = build_user_activity_rows(&report.repositories, settings);
             let mut combined = format!("#1 {CONTRIBUTION_TITLE}\n\n");
             combined.push_str(&render_contribution_table(&contrib_rows));
             combined.push_str(&format!("\n\n#2 {ACTIVITY_TITLE}\n\n"));
@@ -346,7 +349,7 @@ where
                     combined.push_str(&table);
                 }
             }
-            let hm = build_heatmap_data(&report.repositories, None, &today);
+            let hm = build_heatmap_data(&report.repositories, None, &today, settings);
             (combined, Some(hm))
         }
     };
@@ -361,7 +364,11 @@ where
     }
 }
 
-fn apply_analysis_completion(app: &mut AppState, completion: AnalysisCompletion) {
+fn apply_analysis_completion(
+    app: &mut AppState,
+    completion: AnalysisCompletion,
+    settings: &Settings,
+) {
     app.is_loading = false;
     app.analysis_elapsed = completion.elapsed;
 
@@ -383,23 +390,20 @@ fn apply_analysis_completion(app: &mut AppState, completion: AnalysisCompletion)
     }
 
     // UserEffort: populate contributor list and transition to selection screen.
-    // Use lightweight email collection — avoids the full merge_activity_by_email
-    // that build_user_effort_data will do later for the selected contributor.
+    // Use lightweight collection grouped by canonical key (respects user aliases).
     if app.selected_analyze_view == AnalyzeView::UserEffort
         && app.selected_email.is_none()
         && let Some(report) = &app.analysis_result
     {
-        let mut email_map: HashMap<String, (String, u64)> = HashMap::new();
+        let mut key_map: HashMap<String, (String, u64)> = HashMap::new();
         for repo in &report.repositories {
             for cs in &repo.contributions.contributors {
-                let email = cs.email.to_lowercase();
-                let entry = email_map
-                    .entry(email)
-                    .or_insert_with(|| (cs.name.clone(), 0));
+                let key = settings.canonical_key(&cs.email);
+                let entry = key_map.entry(key).or_insert_with(|| (cs.name.clone(), 0));
                 entry.1 += cs.commits;
             }
         }
-        let mut entries: Vec<_> = email_map.into_iter().collect();
+        let mut entries: Vec<_> = key_map.into_iter().collect();
         entries.sort_by(|a, b| b.1.1.cmp(&a.1.1).then(a.0.cmp(&b.0)));
         app.contributor_list = entries.into_iter().map(|(e, (n, _))| (e, n)).collect();
         app.contributor_filter.clear();
@@ -411,12 +415,13 @@ fn apply_analysis_completion(app: &mut AppState, completion: AnalysisCompletion)
 
 /// Synchronous execution for tests — keeps the existing test API working.
 pub fn execute_pending_action(app: &mut AppState) -> anyhow::Result<()> {
-    execute_pending_action_with_store_opener(app, open_store)
+    execute_pending_action_with_store_opener(app, open_store, &Settings::default())
 }
 
 fn execute_pending_action_with_store_opener<F>(
     app: &mut AppState,
     open_store_fn: F,
+    settings: &Settings,
 ) -> anyhow::Result<()>
 where
     F: Fn() -> anyhow::Result<repolyze_store::sqlite::SqliteStore>,
@@ -427,11 +432,11 @@ where
 
     match action {
         AppAction::StartAnalyze { paths, view } => {
-            let completion = compute_analysis(paths, view, &open_store_fn);
-            apply_analysis_completion(app, completion);
+            let completion = compute_analysis(paths, view, &open_store_fn, settings);
+            apply_analysis_completion(app, completion, settings);
         }
         AppAction::RenderUserEffort => {
-            render_user_effort_for_selected(app);
+            render_user_effort_for_selected(app, settings);
         }
         AppAction::LoadMetadata => {
             app.metadata_text = Some(build_metadata_text(&open_store_fn));
@@ -443,7 +448,7 @@ where
             probe_git_tools_workspace(app);
         }
         AppAction::ExportMarkdown => {
-            export_markdown(app);
+            export_markdown(app, settings);
         }
         AppAction::ListMergedBranches { base_branch } => {
             let repo = app
@@ -496,8 +501,8 @@ where
     Ok(())
 }
 
-fn render_user_effort_for_selected(app: &mut AppState) {
-    let email = match &app.selected_email {
+fn render_user_effort_for_selected(app: &mut AppState, settings: &Settings) {
+    let identifier = match &app.selected_email {
         Some(e) => e.clone(),
         None => return,
     };
@@ -513,19 +518,19 @@ fn render_user_effort_for_selected(app: &mut AppState) {
 
     let today = repolyze_core::date_util::today_ymd();
 
-    if let Some(effort) = build_user_effort_data(repos, &email) {
+    if let Some(effort) = build_user_effort_data(repos, &identifier, settings) {
         let table_body = render_user_effort_table(&effort);
         app.analysis_table = Some(format!("{header}{table_body}"));
-        let hm = build_heatmap_data(repos, Some(&email), &today);
+        let hm = build_heatmap_data(repos, Some(&identifier), &today, settings);
         app.heatmap_data = Some(hm);
     } else {
-        app.analysis_table = Some(format!("{header}No data found for {email}"));
+        app.analysis_table = Some(format!("{header}No data found for {identifier}"));
         app.heatmap_data = None;
     }
     app.scroll_offset = 0;
 }
 
-fn export_markdown(app: &mut AppState) {
+fn export_markdown(app: &mut AppState, settings: &Settings) {
     let report = match &app.analysis_result {
         Some(r) => r,
         None => {
@@ -534,7 +539,7 @@ fn export_markdown(app: &mut AppState) {
         }
     };
 
-    let markdown = render_markdown(report);
+    let markdown = render_markdown(report, settings);
     let date = repolyze_core::date_util::today_ymd();
     let time_suffix = {
         let secs = std::time::SystemTime::now()
@@ -815,7 +820,11 @@ mod tests {
             view: AnalyzeView::All,
         });
 
-        let result = execute_pending_action_with_store_opener(&mut app, || Err(anyhow!("boom")));
+        let result = execute_pending_action_with_store_opener(
+            &mut app,
+            || Err(anyhow!("boom")),
+            &Settings::default(),
+        );
 
         assert!(result.is_ok());
         assert!(!app.is_loading);
@@ -836,9 +845,14 @@ mod tests {
         let mut app = AppState::new();
         app.pending_action = Some(AppAction::LoadMetadata);
 
-        execute_pending_action_with_store_opener(&mut app, move || {
-            repolyze_store::sqlite::SqliteStore::open(&db_path_clone).map_err(|e| anyhow!("{e}"))
-        })
+        execute_pending_action_with_store_opener(
+            &mut app,
+            move || {
+                repolyze_store::sqlite::SqliteStore::open(&db_path_clone)
+                    .map_err(|e| anyhow!("{e}"))
+            },
+            &Settings::default(),
+        )
         .unwrap();
 
         let text = app.metadata_text.as_ref().unwrap();
@@ -853,7 +867,12 @@ mod tests {
         let mut app = AppState::new();
         app.pending_action = Some(AppAction::LoadMetadata);
 
-        execute_pending_action_with_store_opener(&mut app, || Err(anyhow!("boom"))).unwrap();
+        execute_pending_action_with_store_opener(
+            &mut app,
+            || Err(anyhow!("boom")),
+            &Settings::default(),
+        )
+        .unwrap();
 
         let text = app.metadata_text.as_ref().unwrap();
         assert!(text.contains("Failed to open database"));
@@ -862,7 +881,7 @@ mod tests {
     #[test]
     fn export_markdown_without_result_sets_error_message() {
         let mut app = AppState::new();
-        export_markdown(&mut app);
+        export_markdown(&mut app, &Settings::default());
         assert_eq!(app.status_message, "No report to export");
     }
 
@@ -884,7 +903,7 @@ mod tests {
             failures: vec![],
         });
 
-        export_markdown(&mut app);
+        export_markdown(&mut app, &Settings::default());
 
         // Restore cwd before assertions so cleanup works even on failure
         std::env::set_current_dir(&original_dir).unwrap();

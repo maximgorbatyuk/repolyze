@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use repolyze_core::analytics::{RepoComparisonRow, build_heatmap_data, build_repo_comparison};
 use repolyze_core::date_util;
 use repolyze_core::model::{ComparisonReport, ContributorStats, HeatmapData};
+use repolyze_core::settings::Settings;
 
 const WEEKDAY_NAMES: [&str; 7] = [
     "Monday",
@@ -15,7 +16,7 @@ const WEEKDAY_NAMES: [&str; 7] = [
 ];
 
 /// Render a comparison report as Markdown.
-pub fn render_markdown(report: &ComparisonReport) -> String {
+pub fn render_markdown(report: &ComparisonReport, settings: &Settings) -> String {
     let mut out = String::new();
 
     // Title
@@ -57,34 +58,40 @@ pub fn render_markdown(report: &ComparisonReport) -> String {
 
     // Top contributors
     out.push_str("## Top Contributors\n\n");
-    out.push_str("| Name | Email | Commits | Lines Added | Lines Deleted | Net |\n");
-    out.push_str("|---|---|---|---|---|---|\n");
+    out.push_str("| Author | Commits | Lines Added | Lines Deleted | Net |\n");
+    out.push_str("|---|---|---|---|---|\n");
 
-    // Aggregate contributors by email across repos
-    let mut by_email: HashMap<String, ContributorStats> = HashMap::new();
+    // Aggregate contributors by canonical key across repos.
+    // The display name is the configured user name (from settings) or the git author name.
+    let mut by_key: HashMap<String, (String, ContributorStats)> = HashMap::new();
     for analysis in &report.repositories {
         for c in &analysis.contributions.contributors {
-            let key = c.email.to_lowercase();
-            by_email
-                .entry(key)
-                .and_modify(|acc| {
+            let key = settings.canonical_key(&c.email);
+            by_key
+                .entry(key.clone())
+                .and_modify(|(_, acc)| {
                     acc.commits += c.commits;
                     acc.lines_added += c.lines_added;
                     acc.lines_deleted += c.lines_deleted;
                     acc.net_lines += c.net_lines;
                     acc.files_touched += c.files_touched;
                 })
-                .or_insert_with(|| c.clone());
+                .or_insert_with(|| (key, c.clone()));
         }
     }
-    let mut merged: Vec<_> = by_email.into_values().collect();
-    merged.sort_by(|a, b| b.commits.cmp(&a.commits));
+    let mut merged: Vec<_> = by_key.into_values().collect();
+    merged.sort_by(|a, b| b.1.commits.cmp(&a.1.commits));
 
-    for contributor in merged.iter().take(20) {
+    for (display_key, contributor) in merged.iter().take(20) {
+        // Use configured name if different from email, otherwise git name
+        let author = if display_key != &contributor.email.to_lowercase() {
+            display_key.as_str()
+        } else {
+            &contributor.name
+        };
         out.push_str(&format!(
-            "| {} | {} | {} | {} | {} | {} |\n",
-            contributor.name,
-            contributor.email,
+            "| {} | {} | {} | {} | {} |\n",
+            author,
             contributor.commits,
             contributor.lines_added,
             contributor.lines_deleted,
@@ -161,7 +168,7 @@ pub fn render_markdown(report: &ComparisonReport) -> String {
 
     // Activity heatmap
     let today = date_util::today_ymd();
-    let heatmap = build_heatmap_data(&report.repositories, None, &today);
+    let heatmap = build_heatmap_data(&report.repositories, None, &today, settings);
     out.push_str(&render_heatmap_section(&heatmap));
 
     // Failures
@@ -387,14 +394,14 @@ mod tests {
     #[test]
     fn markdown_report_contains_title() {
         let report = make_two_repo_report();
-        let md = render_markdown(&report);
+        let md = render_markdown(&report, &Settings::default());
         assert!(md.contains("# Repolyze Analysis Report"));
     }
 
     #[test]
     fn markdown_report_contains_repository_summary() {
         let report = make_two_repo_report();
-        let md = render_markdown(&report);
+        let md = render_markdown(&report, &Settings::default());
         assert!(md.contains("## Repository Summary"));
         assert!(md.contains("repo-a"));
         assert!(md.contains("repo-b"));
@@ -403,7 +410,7 @@ mod tests {
     #[test]
     fn markdown_report_contains_contributor_section() {
         let report = make_two_repo_report();
-        let md = render_markdown(&report);
+        let md = render_markdown(&report, &Settings::default());
         assert!(md.contains("## Top Contributors"));
         assert!(md.contains("Alice"));
     }
@@ -411,7 +418,7 @@ mod tests {
     #[test]
     fn markdown_report_contains_activity_sections() {
         let report = make_two_repo_report();
-        let md = render_markdown(&report);
+        let md = render_markdown(&report, &Settings::default());
         assert!(md.contains("## Activity by Hour"));
         assert!(md.contains("## Activity by Weekday"));
     }
@@ -419,7 +426,7 @@ mod tests {
     #[test]
     fn markdown_report_contains_size_section() {
         let report = make_two_repo_report();
-        let md = render_markdown(&report);
+        let md = render_markdown(&report, &Settings::default());
         assert!(md.contains("## Size Comparison"));
     }
 
@@ -431,7 +438,7 @@ mod tests {
             reason: "not a git repository".to_string(),
         });
 
-        let md = render_markdown(&report);
+        let md = render_markdown(&report, &Settings::default());
         assert!(md.contains("## Failures"));
         assert!(md.contains("not a git repository"));
     }
@@ -439,23 +446,23 @@ mod tests {
     #[test]
     fn markdown_report_omits_failures_when_empty() {
         let report = make_two_repo_report();
-        let md = render_markdown(&report);
+        let md = render_markdown(&report, &Settings::default());
         assert!(!md.contains("## Failures"));
     }
 
     #[test]
-    fn markdown_report_aggregates_contributors_by_email_across_repos() {
+    fn markdown_report_aggregates_contributors_by_key_across_repos() {
         let report = make_two_repo_report();
-        let md = render_markdown(&report);
+        let md = render_markdown(&report, &Settings::default());
 
-        assert_eq!(md.matches("| Alice | alice@example.com |").count(), 1);
-        assert!(md.contains("| Alice | alice@example.com | 15 | 300 | 75 | 225 |"));
+        // Without settings, the author column shows the git name
+        assert!(md.contains("| Alice | 15 | 300 | 75 | 225 |"));
     }
 
     #[test]
     fn markdown_report_contains_heatmap_section() {
         let report = make_two_repo_report();
-        let md = render_markdown(&report);
+        let md = render_markdown(&report, &Settings::default());
         assert!(md.contains("## Activity Heatmap"));
         assert!(md.contains("Mon"));
         assert!(md.contains("Wed"));
@@ -475,7 +482,7 @@ mod tests {
         report.repositories[1].activity.by_weekday[2] = 2;
         report.repositories[1].activity.heatmap[2][10] = 2;
 
-        let md = render_markdown(&report);
+        let md = render_markdown(&report, &Settings::default());
 
         assert_eq!(md.matches("| 10:00 | 3 |").count(), 1);
         assert_eq!(md.matches("| Wednesday | 3 |").count(), 1);

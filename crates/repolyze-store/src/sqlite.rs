@@ -375,16 +375,19 @@ impl SqliteStore {
         snapshot_ids: &[i64],
     ) -> Result<Vec<ContributionRowRecord>, StoreError> {
         let analyses = self.load_analyses_for_snapshot_ids(snapshot_ids)?;
-        Ok(repolyze_core::analytics::build_contribution_rows(&analyses)
-            .into_iter()
-            .map(|row| ContributionRowRecord {
-                email: row.email,
-                commits: row.commits as i64,
-                lines_modified: row.lines_modified as i64,
-                lines_per_commit: row.lines_per_commit,
-                files_touched: row.files_touched as i64,
-            })
-            .collect())
+        let no_settings = repolyze_core::settings::Settings::default();
+        Ok(
+            repolyze_core::analytics::build_contribution_rows(&analyses, &no_settings)
+                .into_iter()
+                .map(|row| ContributionRowRecord {
+                    email: row.identifier,
+                    commits: row.commits as i64,
+                    lines_modified: row.lines_modified as i64,
+                    lines_per_commit: row.lines_per_commit,
+                    files_touched: row.files_touched as i64,
+                })
+                .collect(),
+        )
     }
 
     pub fn user_activity_rows_for_snapshots(
@@ -392,11 +395,12 @@ impl SqliteStore {
         snapshot_ids: &[i64],
     ) -> Result<Vec<UserActivityRowRecord>, StoreError> {
         let analyses = self.load_analyses_for_snapshot_ids(snapshot_ids)?;
+        let no_settings = repolyze_core::settings::Settings::default();
         Ok(
-            repolyze_core::analytics::build_user_activity_rows(&analyses)
+            repolyze_core::analytics::build_user_activity_rows(&analyses, &no_settings)
                 .into_iter()
                 .map(|row| UserActivityRowRecord {
-                    email: row.email,
+                    email: row.identifier,
                     most_active_week_day: row.most_active_week_day,
                     average_commits_per_day_in_most_active_day: row
                         .average_commits_per_day_in_most_active_day,

@@ -5,6 +5,7 @@ use repolyze_core::model::{
     SizeMetrics,
 };
 use repolyze_core::service::{GitAnalyzer, RepositoryCacheMetadata, analyze_targets_with_store};
+use repolyze_core::settings::Settings;
 use repolyze_store::sqlite::SqliteStore;
 use rusqlite::Connection;
 
@@ -93,6 +94,7 @@ fn analyze_targets_with_store_records_miss_then_hit_runs() {
         &FakeMetricsAnalyzer,
         &store,
         "tui",
+        &Settings::default(),
     );
     let second: ComparisonReport = analyze_targets_with_store(
         std::slice::from_ref(&target),
@@ -100,6 +102,7 @@ fn analyze_targets_with_store_records_miss_then_hit_runs() {
         &FakeMetricsAnalyzer,
         &store,
         "tui",
+        &Settings::default(),
     );
 
     assert_eq!(first.repositories.len(), 1);

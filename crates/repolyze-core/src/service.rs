@@ -6,6 +6,7 @@ use crate::model::{
     ActivitySummary, ComparisonReport, ContributionSummary, PartialFailure, RepositoryAnalysis,
     RepositoryTarget, SizeMetrics,
 };
+use crate::settings::Settings;
 
 #[derive(Debug, Clone)]
 pub struct RepositoryCacheMetadata {
@@ -56,6 +57,7 @@ pub fn analyze_targets<G: GitAnalyzer, M: MetricsAnalyzer>(
     targets: &[RepositoryTarget],
     git: &G,
     metrics: &M,
+    settings: &Settings,
 ) -> ComparisonReport {
     let mut results = Vec::new();
     let mut failures = Vec::new();
@@ -70,7 +72,7 @@ pub fn analyze_targets<G: GitAnalyzer, M: MetricsAnalyzer>(
         }
     }
 
-    build_comparison_report(results, failures)
+    build_comparison_report(results, failures, settings)
 }
 
 pub fn analyze_targets_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: AnalysisStore>(
@@ -79,6 +81,7 @@ pub fn analyze_targets_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: Analysi
     metrics: &M,
     store: &S,
     trigger_source: &str,
+    settings: &Settings,
 ) -> ComparisonReport {
     let mut results = Vec::new();
     let mut failures = Vec::new();
@@ -131,7 +134,7 @@ pub fn analyze_targets_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: Analysi
         }
     }
 
-    build_comparison_report(results, failures)
+    build_comparison_report(results, failures, settings)
 }
 
 fn analyze_target_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: AnalysisStore>(
@@ -322,7 +325,14 @@ mod tests {
         let metrics = PanicMetricsAnalyzer;
         let store = FakeAnalysisStore::with_hit(cached.clone());
 
-        let result = analyze_targets_with_store(&[target], &git, &metrics, &store, "cli");
+        let result = analyze_targets_with_store(
+            &[target],
+            &git,
+            &metrics,
+            &store,
+            "cli",
+            &Settings::default(),
+        );
 
         assert_eq!(result.repositories.len(), 1);
         assert_eq!(

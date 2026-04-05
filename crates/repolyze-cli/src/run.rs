@@ -5,6 +5,7 @@ use repolyze_core::analytics::{
 };
 use repolyze_core::input::resolve_inputs_with_failures;
 use repolyze_core::service::analyze_targets_with_store;
+use repolyze_core::settings::Settings;
 use repolyze_git::backend::GitCliBackend;
 use repolyze_metrics::FilesystemMetricsBackend;
 use repolyze_report::json::render_json;
@@ -22,6 +23,7 @@ pub fn run_analyze(
     view: &AnalyzeView,
     format: &OutputFormat,
     email: Option<&str>,
+    settings: &Settings,
 ) -> anyhow::Result<String> {
     validate_view_format(view, format)?;
 
@@ -30,7 +32,7 @@ pub fn run_analyze(
     let metrics = FilesystemMetricsBackend;
     let store = open_store()?;
     let start = std::time::Instant::now();
-    let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store, "cli");
+    let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store, "cli", settings);
     let elapsed = start.elapsed();
 
     if !input_failures.is_empty() {
@@ -41,17 +43,17 @@ pub fn run_analyze(
 
     match (view, format) {
         (AnalyzeView::All, OutputFormat::Json) => render_json(&report),
-        (AnalyzeView::All, OutputFormat::Md) => Ok(render_markdown(&report)),
+        (AnalyzeView::All, OutputFormat::Md) => Ok(render_markdown(&report, settings)),
         (AnalyzeView::Contribution, OutputFormat::Table) => {
             let folder = folder_display(repos);
             let header = render_analysis_header(&report.repositories, elapsed, &folder);
-            let rows = build_contribution_rows(&report.repositories);
+            let rows = build_contribution_rows(&report.repositories, settings);
             Ok(format!("{header}{}", render_contribution_table(&rows)))
         }
         (AnalyzeView::Activity, OutputFormat::Table) => {
             let folder = folder_display(repos);
             let header = render_analysis_header(&report.repositories, elapsed, &folder);
-            let rows = build_user_activity_rows(&report.repositories);
+            let rows = build_user_activity_rows(&report.repositories, settings);
             Ok(format!("{header}{}", render_user_activity_table(&rows)))
         }
         (AnalyzeView::UserEffort, OutputFormat::Table) => {
@@ -59,7 +61,7 @@ pub fn run_analyze(
                 email.ok_or_else(|| anyhow::anyhow!("--email is required for user-effort view"))?;
             let folder = folder_display(repos);
             let header = render_analysis_header(&report.repositories, elapsed, &folder);
-            let effort = build_user_effort_data(&report.repositories, email)
+            let effort = build_user_effort_data(&report.repositories, email, settings)
                 .ok_or_else(|| anyhow::anyhow!("no data found for email '{email}'"))?;
             Ok(format!("{header}{}", render_user_effort_table(&effort)))
         }

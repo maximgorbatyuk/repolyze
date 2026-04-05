@@ -115,7 +115,7 @@ pub fn render_contribution_table(rows: &[ContributionRow]) -> String {
     let mut out = format!("{CONTRIBUTION_DESC}\n\n");
 
     let headers = &[
-        "Email",
+        "Author",
         "Commits",
         "Lines Modified",
         "Lines per commit",
@@ -127,7 +127,7 @@ pub fn render_contribution_table(rows: &[ContributionRow]) -> String {
         .iter()
         .map(|r| {
             vec![
-                r.email.clone(),
+                r.identifier.clone(),
                 r.commits.to_string(),
                 r.lines_modified.to_string(),
                 format!("{:.2}", r.lines_per_commit),
@@ -175,14 +175,14 @@ pub fn render_user_activity_table(rows: &[UserActivityRow]) -> String {
     legend.push_str("  C/H         Avg commits per active hour-bucket\n");
     legend.push('\n');
 
-    let headers = &["Email", "Day", "C/D (best)", "C/D", "C/H (best)", "C/H"];
+    let headers = &["Author", "Day", "C/D (best)", "C/D", "C/H (best)", "C/H"];
     let right_align = &[false, false, true, true, true, true];
 
     let data: Vec<Vec<String>> = rows
         .iter()
         .map(|r| {
             vec![
-                r.email.clone(),
+                r.identifier.clone(),
                 r.most_active_week_day.clone(),
                 format!("{:.2}", r.average_commits_per_day_in_most_active_day),
                 format!("{:.2}", r.average_commits_per_day),
@@ -282,7 +282,7 @@ fn repo_row(r: &RepoComparisonRow) -> Vec<String> {
 
 pub fn render_user_effort_table(data: &UserEffortData) -> String {
     let mut out = format!("{USER_EFFORT_DESC}\n\n");
-    out.push_str(&format!("User:   {} ({})\n\n", data.email, data.name));
+    out.push_str(&format!("User:   {} ({})\n\n", data.identifier, data.name));
 
     let ext_str = if data.top_extensions.is_empty() {
         "N/A".to_string()
@@ -433,7 +433,7 @@ mod tests {
     #[test]
     fn render_contribution_table_uses_rf8_headers() {
         let rows = vec![ContributionRow {
-            email: "alice@example.com".to_string(),
+            identifier: "alice@example.com".to_string(),
             commits: 5,
             lines_modified: 42,
             lines_per_commit: 8.4,
@@ -442,7 +442,7 @@ mod tests {
 
         let table = render_contribution_table(&rows);
 
-        assert!(table.contains("Email"));
+        assert!(table.contains("Author"));
         assert!(table.contains("Commits"));
         assert!(table.contains("Lines Modified"));
         assert!(table.contains("Lines per commit"));
@@ -456,14 +456,14 @@ mod tests {
     fn render_contribution_table_right_aligns_numbers() {
         let rows = vec![
             ContributionRow {
-                email: "alice@example.com".to_string(),
+                identifier: "alice@example.com".to_string(),
                 commits: 100,
                 lines_modified: 5000,
                 lines_per_commit: 50.0,
                 files_touched: 20,
             },
             ContributionRow {
-                email: "bob@example.com".to_string(),
+                identifier: "bob@example.com".to_string(),
                 commits: 5,
                 lines_modified: 42,
                 lines_per_commit: 8.4,
@@ -484,7 +484,7 @@ mod tests {
     #[test]
     fn render_user_activity_table_uses_rf9_headers() {
         let rows = vec![UserActivityRow {
-            email: "alice@example.com".to_string(),
+            identifier: "alice@example.com".to_string(),
             most_active_week_day: "Monday".to_string(),
             average_commits_per_day_in_most_active_day: 2.0,
             average_commits_per_day: 1.5,
@@ -555,7 +555,7 @@ mod tests {
     fn render_user_effort_table_format() {
         let data = repolyze_core::model::UserEffortData {
             name: "Alice".to_string(),
-            email: "alice@example.com".to_string(),
+            identifier: "alice@example.com".to_string(),
             first_commit: "2024-03-01".to_string(),
             last_commit: "2025-03-15".to_string(),
             most_active_weekday: "Monday".to_string(),

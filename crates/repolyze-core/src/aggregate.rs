@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 
-use crate::model::{
-    ComparisonReport, ComparisonSummary, ContributorStats, PartialFailure, RepositoryAnalysis,
-};
+use crate::model::{ComparisonReport, ComparisonSummary, PartialFailure, RepositoryAnalysis};
+use crate::settings::Settings;
 
 /// Build a comparison report from multiple repository analyses.
 pub fn build_comparison_report(
     results: Vec<RepositoryAnalysis>,
     failures: Vec<PartialFailure>,
+    settings: &Settings,
 ) -> ComparisonReport {
-    let summary = build_summary(&results);
+    let summary = build_summary(&results, settings);
 
     ComparisonReport {
         repositories: results,
@@ -18,8 +18,8 @@ pub fn build_comparison_report(
     }
 }
 
-fn build_summary(results: &[RepositoryAnalysis]) -> ComparisonSummary {
-    let mut contributor_emails: HashMap<String, &ContributorStats> = HashMap::new();
+fn build_summary(results: &[RepositoryAnalysis], settings: &Settings) -> ComparisonSummary {
+    let mut contributor_keys: HashMap<String, bool> = HashMap::new();
     let mut total_commits: u64 = 0;
     let mut total_lines_changed: u64 = 0;
     let mut total_files: u64 = 0;
@@ -29,14 +29,14 @@ fn build_summary(results: &[RepositoryAnalysis]) -> ComparisonSummary {
         total_files += analysis.size.files;
 
         for contributor in &analysis.contributions.contributors {
-            let email = contributor.email.to_lowercase();
-            contributor_emails.entry(email).or_insert(contributor);
+            let key = settings.canonical_key(&contributor.email);
+            contributor_keys.entry(key).or_insert(true);
             total_lines_changed += contributor.lines_added + contributor.lines_deleted;
         }
     }
 
     ComparisonSummary {
-        total_contributors: contributor_emails.len() as u64,
+        total_contributors: contributor_keys.len() as u64,
         total_commits,
         total_lines_changed,
         total_files,
@@ -51,6 +51,10 @@ mod tests {
     use crate::model::{
         ActivitySummary, ContributionSummary, ContributorStats, RepositoryTarget, SizeMetrics,
     };
+
+    fn no_settings() -> Settings {
+        Settings::default()
+    }
 
     fn make_contributor(name: &str, email: &str, commits: u64, net_lines: i64) -> ContributorStats {
         ContributorStats {
@@ -103,7 +107,7 @@ mod tests {
         let repo_a = make_analysis("repo-a", vec![], 10);
         let repo_b = make_analysis("repo-b", vec![], 20);
 
-        let report = build_comparison_report(vec![repo_a, repo_b], vec![]);
+        let report = build_comparison_report(vec![repo_a, repo_b], vec![], &no_settings());
         assert_eq!(report.summary.total_files, 30);
     }
 
@@ -116,7 +120,7 @@ mod tests {
         let repo_a = make_analysis("repo-a", vec![alice_a, bob], 10);
         let repo_b = make_analysis("repo-b", vec![alice_b], 5);
 
-        let report = build_comparison_report(vec![repo_a, repo_b], vec![]);
+        let report = build_comparison_report(vec![repo_a, repo_b], vec![], &no_settings());
 
         // Alice appears in both repos but should count as 1 unique contributor
         assert_eq!(report.summary.total_contributors, 2);
@@ -161,7 +165,7 @@ mod tests {
             },
         };
 
-        let report = build_comparison_report(vec![repo], vec![]);
+        let report = build_comparison_report(vec![repo], vec![], &no_settings());
         assert_eq!(report.summary.total_lines_changed, 14);
     }
 
@@ -170,7 +174,7 @@ mod tests {
         let repo_a = make_analysis("repo-a", vec![], 10);
         let repo_b = make_analysis("repo-b", vec![], 20);
 
-        let report = build_comparison_report(vec![repo_a, repo_b], vec![]);
+        let report = build_comparison_report(vec![repo_a, repo_b], vec![], &no_settings());
 
         assert_eq!(report.repositories.len(), 2);
         assert_eq!(
@@ -191,7 +195,7 @@ mod tests {
             reason: "not a git repository".to_string(),
         };
 
-        let report = build_comparison_report(vec![repo_a], vec![failure]);
+        let report = build_comparison_report(vec![repo_a], vec![failure], &no_settings());
         assert_eq!(report.failures.len(), 1);
         assert_eq!(report.failures[0].reason, "not a git repository");
     }

@@ -5,6 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use clap::Parser;
+use repolyze_core::settings::Settings;
 
 use args::{Cli, Commands};
 
@@ -16,20 +17,34 @@ fn main() -> anyhow::Result<()> {
             .map_err(|e| anyhow::anyhow!("cannot change to directory '{}': {e}", dir.display()))?;
     }
 
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let settings = Settings::ensure_and_load(&cwd);
+
     match cli.command {
-        Some(Commands::Tui) | None => repolyze_tui::run()?,
+        Some(Commands::Tui) | None => repolyze_tui::run(&settings)?,
         Some(Commands::Analyze(args)) => {
             let repos = default_repos(args.repos);
             let format = args
                 .format
                 .unwrap_or_else(|| crate::args::OutputFormat::default_for_view(&args.view));
-            let output = run::run_analyze(&repos, &args.view, &format, args.email.as_deref())?;
+            let output = run::run_analyze(
+                &repos,
+                &args.view,
+                &format,
+                args.email.as_deref(),
+                &settings,
+            )?;
             write_output(&output, args.output.as_deref())?;
         }
         Some(Commands::Compare(args)) => {
             let format: crate::args::OutputFormat = args.format.into();
-            let output =
-                run::run_analyze(&args.repos, &crate::args::AnalyzeView::All, &format, None)?;
+            let output = run::run_analyze(
+                &args.repos,
+                &crate::args::AnalyzeView::All,
+                &format,
+                None,
+                &settings,
+            )?;
             write_output(&output, args.output.as_deref())?;
         }
     }

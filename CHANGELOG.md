@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-04-05
+
+### Added
+
+- **User alias settings**: Repolyze now supports a per-project settings file at `.repolyze/settings.json`. The `users` object maps a display name to a list of email addresses, allowing contributions from multiple git identities to be grouped under a single person. When aliases are configured, all tables, reports, heatmaps, and the TUI contributor picker show the configured name instead of the email and merge stats across all mapped emails.
+- **Auto-create settings file**: On startup, repolyze creates `.repolyze/settings.json` with an empty JSON object (`{}`) if the file does not exist. Existing files are never overwritten.
+
+### Changed
+
+- **"Email" column renamed to "Author"**: Contribution and activity tables (plain-text and Markdown) now use "Author" as the column header, which works for both email addresses and configured display names.
+- **Markdown Top Contributors table simplified**: The separate "Name" and "Email" columns have been merged into a single "Author" column. Without settings, the git author name is shown; with settings, the configured display name is used.
+
 ## [0.1.7] - 2026-04-03
 
 ### Added

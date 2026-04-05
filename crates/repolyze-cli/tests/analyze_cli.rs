@@ -264,7 +264,7 @@ fn analyze_contribution_discovers_repos_under_directory() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Email"))
+        .stdout(predicate::str::contains("Author"))
         .stdout(predicate::str::contains("Files Touched"));
 }
 

@@ -809,6 +809,7 @@ name = "repolyze-core"
 version = "0.1.7"
 dependencies = [
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
 ]

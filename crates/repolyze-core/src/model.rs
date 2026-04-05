@@ -125,7 +125,7 @@ pub struct PartialFailure {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContributionRow {
-    pub email: String,
+    pub identifier: String,
     pub commits: u64,
     pub lines_modified: u64,
     pub lines_per_commit: f64,
@@ -134,7 +134,7 @@ pub struct ContributionRow {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UserActivityRow {
-    pub email: String,
+    pub identifier: String,
     pub most_active_week_day: String,
     pub average_commits_per_day_in_most_active_day: f64,
     pub average_commits_per_day: f64,
@@ -145,7 +145,7 @@ pub struct UserActivityRow {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UserEffortData {
     pub name: String,
-    pub email: String,
+    pub identifier: String,
     pub first_commit: String,
     pub last_commit: String,
     pub most_active_weekday: String,
@@ -162,7 +162,7 @@ pub struct UserEffortData {
 
 impl fmt::Display for UserEffortData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} ({})", self.email, self.name)
+        write!(f, "{} ({})", self.identifier, self.name)
     }
 }
 
