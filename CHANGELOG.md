@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2026-04-07
+
+### Added
+
+- **Multi-repo selection in Git Tools**: The repo picker now supports selecting multiple repositories at once using checkboxes. A "Select all" row toggles all repos. Press Space to toggle individual repos or the select-all row, then Enter to confirm. Branch listing and deletion operate across all selected repos simultaneously.
+- **Repo prefix in multi-repo branch views**: When multiple repos are selected, branch names are prefixed with `[repo-name]` in the branch list and deletion progress screens for disambiguation.
+
+### Fixed
+
+- **TUI crash on empty repo selection**: Replaced `assert!` panics (which would crash the TUI and leave the terminal in raw mode) with graceful error messages when no repos are selected.
+- **Single failed repo aborted entire scan**: Branch listing across multiple repos now tolerates partial failures — branches from successful repos are still shown. Errors are only reported when all repos fail and no branches are found.
+- **Single-repo workspace shown as unchecked**: When a workspace contains exactly one repo, the picker now shows it as checked, consistent with it being auto-selected.
+- **Stale cursor position after tool reset**: `clear_tool` now resets the repo picker cursor to the top, preventing a stale position when re-entering the picker.
+
+### Changed
+
+- **`delete_branch` API simplified**: `delete_branch` no longer takes a separate `repo` path argument. The repo is now carried by `BranchInfo::repo`, making the API self-contained.
+- **Repo display name deduplicated**: Extracted `BranchInfo::repo_display_name()` and `path_display_name()` helpers, replacing 6 inline occurrences of the same path-basename logic.
+
 ## [0.1.8] - 2026-04-05
 
 ### Added

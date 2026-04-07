@@ -178,6 +178,7 @@ fn handle_git_tools_repo_select(app: &mut AppState, code: KeyCode) {
             let h = app.visible_height;
             app.git_tools.ensure_repo_visible(h);
         }
+        KeyCode::Char(' ') => app.git_tools.toggle_repo(),
         KeyCode::Enter => app.git_tools_select_repo(),
         KeyCode::Esc => {
             app.git_tools.clear_tool();

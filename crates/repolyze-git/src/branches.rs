@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use repolyze_core::date_util;
@@ -28,6 +28,17 @@ pub struct BranchInfo {
     pub has_local: bool,
     pub has_remote: bool,
     pub last_activity: Option<String>,
+    pub repo: PathBuf,
+}
+
+impl BranchInfo {
+    /// Short display name for the repo (directory basename, or full path as fallback).
+    pub fn repo_display_name(&self) -> String {
+        self.repo
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| self.repo.to_string_lossy().to_string())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +64,7 @@ pub fn list_merged_branches(
     base_branch: &str,
 ) -> Result<Vec<BranchInfo>, RepolyzeError> {
     let current = current_branch(repo)?;
+    let repo_path = repo.to_path_buf();
 
     // Local branches merged into base
     let local_output = run_git(repo, &["branch", "--merged", base_branch])?;
@@ -88,6 +100,7 @@ pub fn list_merged_branches(
             has_local: true,
             has_remote,
             last_activity: None,
+            repo: repo_path.clone(),
         });
     }
 
@@ -98,6 +111,7 @@ pub fn list_merged_branches(
                 has_local: false,
                 has_remote: true,
                 last_activity: None,
+                repo: repo_path.clone(),
             });
         }
     }
@@ -108,6 +122,7 @@ pub fn list_merged_branches(
 
 pub fn list_stale_branches(repo: &Path, days: u64) -> Result<Vec<BranchInfo>, RepolyzeError> {
     let current = current_branch(repo)?;
+    let repo_path = repo.to_path_buf();
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| RepolyzeError::Parse(format!("system time error: {e}")))?
@@ -151,6 +166,7 @@ pub fn list_stale_branches(repo: &Path, days: u64) -> Result<Vec<BranchInfo>, Re
                 has_local: true,
                 has_remote: false,
                 last_activity: Some(date),
+                repo: repo_path.clone(),
             });
         }
     }
@@ -199,6 +215,7 @@ pub fn list_stale_branches(repo: &Path, days: u64) -> Result<Vec<BranchInfo>, Re
                     has_local: false,
                     has_remote: true,
                     last_activity: Some(date),
+                    repo: repo_path.clone(),
                 });
             }
         }
@@ -209,7 +226,9 @@ pub fn list_stale_branches(repo: &Path, days: u64) -> Result<Vec<BranchInfo>, Re
 }
 
 /// Delete a branch locally and/or from the "origin" remote.
-pub fn delete_branch(repo: &Path, branch: &BranchInfo, force: bool) -> DeleteResult {
+/// Uses `branch.repo` to determine which repository to operate on.
+pub fn delete_branch(branch: &BranchInfo, force: bool) -> DeleteResult {
+    let repo = &branch.repo;
     let mut result = DeleteResult {
         branch: branch.name.clone(),
         local_ok: None,
@@ -370,8 +389,9 @@ mod tests {
             has_local: true,
             has_remote: false,
             last_activity: None,
+            repo: root.to_path_buf(),
         };
-        let result = delete_branch(root, &branch, false);
+        let result = delete_branch(&branch, false);
         assert_eq!(result.local_ok, Some(true));
         assert_eq!(result.remote_ok, None); // no remote to delete
         assert!(result.error.is_none());
@@ -406,13 +426,14 @@ mod tests {
             has_local: true,
             has_remote: false,
             last_activity: None,
+            repo: root.to_path_buf(),
         };
-        let result = delete_branch(root, &branch, false);
+        let result = delete_branch(&branch, false);
         assert_eq!(result.local_ok, Some(false));
         assert!(result.error.is_some());
 
         // Force delete should succeed
-        let result = delete_branch(root, &branch, true);
+        let result = delete_branch(&branch, true);
         assert_eq!(result.local_ok, Some(true));
         assert!(result.error.is_none());
     }
@@ -435,8 +456,9 @@ mod tests {
             has_local: false,
             has_remote: true,
             last_activity: None,
+            repo: root.to_path_buf(),
         };
-        let result = delete_branch(root, &branch, false);
+        let result = delete_branch(&branch, false);
         assert_eq!(result.local_ok, None); // no local to delete
         assert_eq!(result.remote_ok, Some(false));
         assert!(result.error.is_some());

@@ -117,56 +117,75 @@ pub fn run(settings: &Settings) -> anyhow::Result<()> {
                     export_markdown(&mut app, settings);
                 }
                 AppAction::ListMergedBranches { base_branch } => {
-                    let repo = app
-                        .git_tools
-                        .selected_repo
-                        .clone()
-                        .expect("selected_repo must be set before listing branches");
-                    app.is_loading = true;
-                    app.spinner_frame = 0;
-                    let (tx, rx) = mpsc::channel();
-                    std::thread::spawn(move || {
-                        match branches::list_merged_branches(&repo, &base_branch) {
-                            Ok(list) => tx.send(BranchListResult::Ok(list)).ok(),
-                            Err(e) => tx.send(BranchListResult::Err(e.to_string())).ok(),
-                        };
-                    });
-                    branch_list_rx = Some(rx);
+                    let repos = app.git_tools.selected_repos.clone();
+                    if repos.is_empty() {
+                        app.git_tools.error = Some("No repositories selected".to_string());
+                    } else {
+                        app.is_loading = true;
+                        app.spinner_frame = 0;
+                        let (tx, rx) = mpsc::channel();
+                        std::thread::spawn(move || {
+                            let mut all_branches = Vec::new();
+                            let mut errors = Vec::new();
+                            for repo in &repos {
+                                match branches::list_merged_branches(repo, &base_branch) {
+                                    Ok(list) => all_branches.extend(list),
+                                    Err(e) => errors.push(e.to_string()),
+                                }
+                            }
+                            if all_branches.is_empty() && !errors.is_empty() {
+                                tx.send(BranchListResult::Err(errors.join("; "))).ok();
+                            } else {
+                                tx.send(BranchListResult::Ok(all_branches)).ok();
+                            }
+                        });
+                        branch_list_rx = Some(rx);
+                    }
                 }
                 AppAction::ListStaleBranches { days } => {
-                    let repo = app
-                        .git_tools
-                        .selected_repo
-                        .clone()
-                        .expect("selected_repo must be set before listing branches");
-                    app.is_loading = true;
-                    app.spinner_frame = 0;
-                    let (tx, rx) = mpsc::channel();
-                    std::thread::spawn(move || {
-                        match branches::list_stale_branches(&repo, days) {
-                            Ok(list) => tx.send(BranchListResult::Ok(list)).ok(),
-                            Err(e) => tx.send(BranchListResult::Err(e.to_string())).ok(),
-                        };
-                    });
-                    branch_list_rx = Some(rx);
+                    let repos = app.git_tools.selected_repos.clone();
+                    if repos.is_empty() {
+                        app.git_tools.error = Some("No repositories selected".to_string());
+                    } else {
+                        app.is_loading = true;
+                        app.spinner_frame = 0;
+                        let (tx, rx) = mpsc::channel();
+                        std::thread::spawn(move || {
+                            let mut all_branches = Vec::new();
+                            let mut errors = Vec::new();
+                            for repo in &repos {
+                                match branches::list_stale_branches(repo, days) {
+                                    Ok(list) => all_branches.extend(list),
+                                    Err(e) => errors.push(e.to_string()),
+                                }
+                            }
+                            if all_branches.is_empty() && !errors.is_empty() {
+                                tx.send(BranchListResult::Err(errors.join("; "))).ok();
+                            } else {
+                                tx.send(BranchListResult::Ok(all_branches)).ok();
+                            }
+                        });
+                        branch_list_rx = Some(rx);
+                    }
                 }
                 AppAction::DeleteBranches => {
-                    let repo = app
-                        .git_tools
-                        .selected_repo
-                        .clone()
-                        .expect("selected_repo must be set before deleting branches");
                     let branch_list = app.git_tools.branches.clone();
+                    let multi_repo = app.git_tools.selected_repos.len() > 1;
                     let force = app.git_tools.mode == Some(GitToolsMode::StaleBranches);
                     let (tx, rx) = mpsc::channel();
                     std::thread::spawn(move || {
                         let total = branch_list.len();
                         for (i, branch) in branch_list.iter().enumerate() {
-                            let result = branches::delete_branch(&repo, branch, force);
+                            let result = branches::delete_branch(branch, force);
+                            let display_name = if multi_repo {
+                                format!("[{}] {}", branch.repo_display_name(), result.branch)
+                            } else {
+                                result.branch
+                            };
                             let success =
                                 result.local_ok.unwrap_or(true) && result.remote_ok.unwrap_or(true);
                             tx.send(BranchDeleteProgress {
-                                name: result.branch,
+                                name: display_name,
                                 success,
                                 done: i + 1 == total,
                             })
@@ -451,48 +470,59 @@ where
             export_markdown(app, settings);
         }
         AppAction::ListMergedBranches { base_branch } => {
-            let repo = app
-                .git_tools
-                .selected_repo
-                .clone()
-                .expect("selected_repo must be set before listing branches");
-            match branches::list_merged_branches(&repo, &base_branch) {
-                Ok(list) => {
-                    app.git_tools.branches = list;
-                    app.active_screen = app::Screen::GitToolsBranchList;
+            let repos = &app.git_tools.selected_repos;
+            if repos.is_empty() {
+                app.git_tools.error = Some("No repositories selected".to_string());
+            } else {
+                let mut all_branches = Vec::new();
+                let mut errors = Vec::new();
+                for repo in repos {
+                    match branches::list_merged_branches(repo, &base_branch) {
+                        Ok(list) => all_branches.extend(list),
+                        Err(e) => errors.push(e.to_string()),
+                    }
                 }
-                Err(e) => {
-                    app.git_tools.error = Some(e.to_string());
+                if all_branches.is_empty() && !errors.is_empty() {
+                    app.git_tools.error = Some(errors.join("; "));
+                } else {
+                    app.git_tools.branches = all_branches;
+                    app.active_screen = app::Screen::GitToolsBranchList;
                 }
             }
         }
         AppAction::ListStaleBranches { days } => {
-            let repo = app
-                .git_tools
-                .selected_repo
-                .clone()
-                .expect("selected_repo must be set before listing branches");
-            match branches::list_stale_branches(&repo, days) {
-                Ok(list) => {
-                    app.git_tools.branches = list;
-                    app.active_screen = app::Screen::GitToolsBranchList;
+            let repos = &app.git_tools.selected_repos;
+            if repos.is_empty() {
+                app.git_tools.error = Some("No repositories selected".to_string());
+            } else {
+                let mut all_branches = Vec::new();
+                let mut errors = Vec::new();
+                for repo in repos {
+                    match branches::list_stale_branches(repo, days) {
+                        Ok(list) => all_branches.extend(list),
+                        Err(e) => errors.push(e.to_string()),
+                    }
                 }
-                Err(e) => {
-                    app.git_tools.error = Some(e.to_string());
+                if all_branches.is_empty() && !errors.is_empty() {
+                    app.git_tools.error = Some(errors.join("; "));
+                } else {
+                    app.git_tools.branches = all_branches;
+                    app.active_screen = app::Screen::GitToolsBranchList;
                 }
             }
         }
         AppAction::DeleteBranches => {
-            let repo = app
-                .git_tools
-                .selected_repo
-                .clone()
-                .expect("selected_repo must be set before deleting branches");
+            let multi_repo = app.git_tools.selected_repos.len() > 1;
             let force = app.git_tools.mode == Some(GitToolsMode::StaleBranches);
             for branch in &app.git_tools.branches {
-                let result = branches::delete_branch(&repo, branch, force);
+                let result = branches::delete_branch(branch, force);
+                let display_name = if multi_repo {
+                    format!("[{}] {}", branch.repo_display_name(), result.branch)
+                } else {
+                    result.branch
+                };
                 let success = result.local_ok.unwrap_or(true) && result.remote_ok.unwrap_or(true);
-                app.git_tools.progress.push((result.branch, success));
+                app.git_tools.progress.push((display_name, success));
             }
             app.git_tools.done = true;
         }
@@ -734,7 +764,10 @@ fn probe_git_tools_workspace(app: &mut AppState) {
         Ok(targets) => {
             let repos: Vec<PathBuf> = targets.into_iter().map(|t| t.root).collect();
             if repos.len() == 1 {
-                app.git_tools.selected_repo = Some(repos[0].clone());
+                app.git_tools.selected_repos = repos.clone();
+                app.git_tools.repo_checked = vec![true];
+            } else {
+                app.git_tools.repo_checked = vec![false; repos.len()];
             }
             app.git_tools.repos = repos;
         }

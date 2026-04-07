@@ -109,7 +109,9 @@ pub struct GitToolsState {
     pub scroll: u16,
     // Workspace discovery
     pub repos: Vec<PathBuf>,
-    pub selected_repo: Option<PathBuf>,
+    pub repo_checked: Vec<bool>,
+    pub selected_repos: Vec<PathBuf>,
+    /// Cursor position in repo picker. 0 = "Select all" row, 1.. = individual repos.
     pub repo_select_idx: usize,
     pub workspace_error: Option<String>,
 }
@@ -132,7 +134,8 @@ impl GitToolsState {
             error: None,
             scroll: 0,
             repos: Vec::new(),
-            selected_repo: None,
+            repo_checked: Vec::new(),
+            selected_repos: Vec::new(),
             repo_select_idx: 0,
             workspace_error: None,
         }
@@ -143,7 +146,7 @@ impl GitToolsState {
         *self = Self::new();
     }
 
-    /// Reset tool-specific state but keep workspace info (repos, selected_repo)
+    /// Reset tool-specific state but keep workspace info (repos, repo_checked, selected_repos)
     /// and menu cursor (`selected`) so the user returns to the same menu position.
     pub fn clear_tool(&mut self) {
         self.mode = None;
@@ -153,6 +156,7 @@ impl GitToolsState {
         self.done = false;
         self.error = None;
         self.scroll = 0;
+        self.repo_select_idx = 0;
     }
 
     pub fn menu_up(&mut self) {
@@ -185,9 +189,36 @@ impl GitToolsState {
     }
 
     pub fn repo_select_down(&mut self) {
-        if self.repo_select_idx + 1 < self.repos.len() {
+        // Row 0 = "Select all", rows 1..=repos.len() = individual repos
+        if self.repo_select_idx < self.repos.len() {
             self.repo_select_idx += 1;
         }
+    }
+
+    /// Toggle checkbox for the repo at the current cursor position.
+    pub fn toggle_repo(&mut self) {
+        if self.repo_select_idx == 0 {
+            self.toggle_all_repos();
+        } else {
+            let i = self.repo_select_idx - 1;
+            if i < self.repo_checked.len() {
+                self.repo_checked[i] = !self.repo_checked[i];
+            }
+        }
+    }
+
+    /// If all repos are checked, uncheck all; otherwise check all.
+    pub fn toggle_all_repos(&mut self) {
+        let all_checked = self.repo_checked.iter().all(|c| *c);
+        let new_val = !all_checked;
+        for c in &mut self.repo_checked {
+            *c = new_val;
+        }
+    }
+
+    /// Returns true if all repos are checked.
+    pub fn all_repos_checked(&self) -> bool {
+        !self.repo_checked.is_empty() && self.repo_checked.iter().all(|c| *c)
     }
 
     /// Keep the selected repo visible in the scrollable viewport.
@@ -500,19 +531,29 @@ impl AppState {
         if mode == GitToolsMode::StaleBranches {
             self.git_tools.input = "90".to_string();
         }
-        // Multi-repo: show repo picker first if no repo selected yet
-        if self.git_tools.repos.len() > 1 && self.git_tools.selected_repo.is_none() {
+        // Multi-repo: show repo picker first if no repos selected yet
+        if self.git_tools.repos.len() > 1 && self.git_tools.selected_repos.is_empty() {
             self.active_screen = Screen::GitToolsRepoSelect;
         } else {
             self.active_screen = Screen::GitToolsInput;
         }
     }
 
+    /// Confirm repo selection: collect all checked repos into `selected_repos`.
     pub fn git_tools_select_repo(&mut self) {
-        if let Some(path) = self.git_tools.repos.get(self.git_tools.repo_select_idx) {
-            self.git_tools.selected_repo = Some(path.clone());
-            self.active_screen = Screen::GitToolsInput;
+        let checked: Vec<PathBuf> = self
+            .git_tools
+            .repos
+            .iter()
+            .zip(self.git_tools.repo_checked.iter())
+            .filter(|(_, checked)| **checked)
+            .map(|(path, _)| path.clone())
+            .collect();
+        if checked.is_empty() {
+            return; // nothing selected, stay on picker
         }
+        self.git_tools.selected_repos = checked;
+        self.active_screen = Screen::GitToolsInput;
     }
 
     pub fn git_tools_submit_input(&mut self) {
@@ -832,7 +873,7 @@ mod tests {
         let mut app = AppState::new();
         app.active_screen = Screen::GitToolsMenu;
         app.git_tools.repos = vec![PathBuf::from("/tmp/repo")];
-        app.git_tools.selected_repo = Some(PathBuf::from("/tmp/repo"));
+        app.git_tools.selected_repos = vec![PathBuf::from("/tmp/repo")];
         app.git_tools.selected = 0;
         app.git_tools_select();
         assert_eq!(app.active_screen, Screen::GitToolsInput);
@@ -845,7 +886,7 @@ mod tests {
         let mut app = AppState::new();
         app.active_screen = Screen::GitToolsMenu;
         app.git_tools.repos = vec![PathBuf::from("/tmp/repo")];
-        app.git_tools.selected_repo = Some(PathBuf::from("/tmp/repo"));
+        app.git_tools.selected_repos = vec![PathBuf::from("/tmp/repo")];
         app.git_tools.selected = 1;
         app.git_tools_select();
         assert_eq!(app.active_screen, Screen::GitToolsInput);
@@ -915,7 +956,7 @@ mod tests {
     fn git_tools_clear_tool_preserves_repos() {
         let mut app = AppState::new();
         app.git_tools.repos = vec![PathBuf::from("/tmp/a"), PathBuf::from("/tmp/b")];
-        app.git_tools.selected_repo = Some(PathBuf::from("/tmp/a"));
+        app.git_tools.selected_repos = vec![PathBuf::from("/tmp/a")];
         app.git_tools.mode = Some(GitToolsMode::MergedBranches);
         app.git_tools.input = "main".to_string();
         app.git_tools.done = true;
@@ -926,7 +967,7 @@ mod tests {
         assert!(!app.git_tools.done);
         // Workspace state is preserved
         assert_eq!(app.git_tools.repos.len(), 2);
-        assert_eq!(app.git_tools.selected_repo, Some(PathBuf::from("/tmp/a")));
+        assert_eq!(app.git_tools.selected_repos, vec![PathBuf::from("/tmp/a")]);
     }
 
     #[test]
@@ -944,7 +985,7 @@ mod tests {
         let mut app = AppState::new();
         app.active_screen = Screen::GitToolsMenu;
         app.git_tools.repos = vec![PathBuf::from("/tmp/a"), PathBuf::from("/tmp/b")];
-        // No selected_repo yet
+        // No selected_repos yet
         app.git_tools.selected = 0;
         app.git_tools_select();
         assert_eq!(app.active_screen, Screen::GitToolsRepoSelect);
@@ -955,22 +996,57 @@ mod tests {
         let mut app = AppState::new();
         app.active_screen = Screen::GitToolsMenu;
         app.git_tools.repos = vec![PathBuf::from("/tmp/a"), PathBuf::from("/tmp/b")];
-        app.git_tools.selected_repo = Some(PathBuf::from("/tmp/a"));
+        app.git_tools.selected_repos = vec![PathBuf::from("/tmp/a")];
         app.git_tools.selected = 0;
         app.git_tools_select();
         assert_eq!(app.active_screen, Screen::GitToolsInput);
     }
 
     #[test]
-    fn git_tools_select_repo_sets_repo_and_transitions() {
+    fn git_tools_select_repo_collects_checked_and_transitions() {
         let mut app = AppState::new();
         app.git_tools.repos = vec![PathBuf::from("/tmp/a"), PathBuf::from("/tmp/b")];
+        app.git_tools.repo_checked = vec![false, true];
         app.git_tools.mode = Some(GitToolsMode::MergedBranches);
-        app.git_tools.repo_select_idx = 1;
         app.active_screen = Screen::GitToolsRepoSelect;
         app.git_tools_select_repo();
-        assert_eq!(app.git_tools.selected_repo, Some(PathBuf::from("/tmp/b")));
+        assert_eq!(app.git_tools.selected_repos, vec![PathBuf::from("/tmp/b")]);
         assert_eq!(app.active_screen, Screen::GitToolsInput);
+    }
+
+    #[test]
+    fn git_tools_select_repo_does_nothing_when_none_checked() {
+        let mut app = AppState::new();
+        app.git_tools.repos = vec![PathBuf::from("/tmp/a"), PathBuf::from("/tmp/b")];
+        app.git_tools.repo_checked = vec![false, false];
+        app.active_screen = Screen::GitToolsRepoSelect;
+        app.git_tools_select_repo();
+        assert!(app.git_tools.selected_repos.is_empty());
+        assert_eq!(app.active_screen, Screen::GitToolsRepoSelect);
+    }
+
+    #[test]
+    fn toggle_repo_toggles_individual() {
+        let mut state = GitToolsState::new();
+        state.repos = vec![PathBuf::from("/a"), PathBuf::from("/b")];
+        state.repo_checked = vec![false, false];
+        state.repo_select_idx = 1; // first repo (idx 0 = select all)
+        state.toggle_repo();
+        assert_eq!(state.repo_checked, vec![true, false]);
+        state.toggle_repo();
+        assert_eq!(state.repo_checked, vec![false, false]);
+    }
+
+    #[test]
+    fn toggle_repo_on_select_all_row() {
+        let mut state = GitToolsState::new();
+        state.repos = vec![PathBuf::from("/a"), PathBuf::from("/b")];
+        state.repo_checked = vec![false, false];
+        state.repo_select_idx = 0; // "Select all" row
+        state.toggle_repo();
+        assert_eq!(state.repo_checked, vec![true, true]);
+        state.toggle_repo();
+        assert_eq!(state.repo_checked, vec![false, false]);
     }
 
     #[test]

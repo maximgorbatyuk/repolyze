@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use ratatui::{
     Frame,
     layout::Rect,
@@ -37,6 +39,13 @@ const GITHUB_URL: &str = "https://github.com/maximgorbatyuk/repolyze";
 const SLOGAN: &str = "Know your code better.";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const AUTHOR: &str = "maximgorbatyuk";
+
+/// Short display name for a path (directory basename, or full path as fallback).
+fn path_display_name(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string_lossy().to_string())
+}
 
 pub fn draw(frame: &mut Frame, app: &mut AppState) {
     let area = frame.area();
@@ -546,14 +555,16 @@ fn draw_git_tools_menu(frame: &mut Frame, app: &AppState, area: Rect) {
                 Span::styled("   Repos:  ", Style::default().fg(Color::DarkGray)),
                 Span::raw(mode),
             ]));
-            if let Some(repo) = &app.git_tools.selected_repo {
-                let name = repo
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| repo.to_string_lossy().to_string());
+            if !app.git_tools.selected_repos.is_empty() {
+                let names: Vec<String> = app
+                    .git_tools
+                    .selected_repos
+                    .iter()
+                    .map(|r| path_display_name(r))
+                    .collect();
                 lines.push(Line::from(vec![
                     Span::styled("   Active: ", Style::default().fg(Color::DarkGray)),
-                    Span::raw(name),
+                    Span::raw(names.join(", ")),
                 ]));
             }
             lines.push(Line::from(""));
@@ -583,9 +594,9 @@ fn draw_git_tools_menu(frame: &mut Frame, app: &AppState, area: Rect) {
         }
 
         lines.push(Line::from(""));
-        if app.git_tools.repos.len() > 1 && app.git_tools.selected_repo.is_some() {
+        if app.git_tools.repos.len() > 1 && !app.git_tools.selected_repos.is_empty() {
             lines.push(Line::from(Span::styled(
-                " Esc Home to change repository",
+                " Esc Home to change repositories",
                 Style::default().fg(Color::DarkGray),
             )));
             lines.push(Line::from(""));
@@ -611,9 +622,34 @@ fn draw_git_tools_repo_select(frame: &mut Frame, app: &mut AppState, area: Rect)
         Line::from(""),
     ];
 
+    // Row 0: "Select all"
+    let is_cursor_on_all = app.git_tools.repo_select_idx == 0;
+    let all_check = if app.git_tools.all_repos_checked() {
+        "[x]"
+    } else {
+        "[ ]"
+    };
+    let (all_prefix, all_style) = if is_cursor_on_all {
+        (
+            "\u{27a4} ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        ("  ", Style::default())
+    };
+    lines.push(Line::from(Span::styled(
+        format!("{all_prefix}{all_check} 0. Select all"),
+        all_style,
+    )));
+
+    // Rows 1..=repos.len(): individual repos
     for (i, path) in app.git_tools.repos.iter().enumerate() {
-        let is_selected = i == app.git_tools.repo_select_idx;
-        let (prefix, style) = if is_selected {
+        let is_cursor = (i + 1) == app.git_tools.repo_select_idx;
+        let checked = app.git_tools.repo_checked.get(i).copied().unwrap_or(false);
+        let check = if checked { "[x]" } else { "[ ]" };
+        let (prefix, style) = if is_cursor {
             (
                 "\u{27a4} ",
                 Style::default()
@@ -624,14 +660,11 @@ fn draw_git_tools_repo_select(frame: &mut Frame, app: &mut AppState, area: Rect)
             ("  ", Style::default())
         };
 
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| path.to_string_lossy().to_string());
+        let name = path_display_name(path);
         let full_path = path.to_string_lossy();
 
         lines.push(Line::from(vec![
-            Span::styled(format!("{prefix}{}. {name}", i + 1), style),
+            Span::styled(format!("{prefix}{check} {}. {name}", i + 1), style),
             Span::styled(
                 format!("  ({full_path})"),
                 Style::default().fg(Color::DarkGray),
@@ -642,7 +675,8 @@ fn draw_git_tools_repo_select(frame: &mut Frame, app: &mut AppState, area: Rect)
     lines.push(Line::from(""));
     lines.push(hints_line(&[
         ("\u{2191}\u{2193}", "Navigate"),
-        ("Enter", "Select"),
+        ("Space", "Toggle"),
+        ("Enter", "Confirm"),
         ("Esc", "Back"),
         ("Q", "Quit"),
     ]));
@@ -670,14 +704,20 @@ fn draw_git_tools_input(frame: &mut Frame, app: &AppState, area: Rect) {
     ];
 
     // Show which repo is targeted
-    if let Some(repo) = &app.git_tools.selected_repo {
-        let name = repo
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| repo.to_string_lossy().to_string());
+    if !app.git_tools.selected_repos.is_empty() {
+        let names: Vec<String> = app
+            .git_tools
+            .selected_repos
+            .iter()
+            .map(|r| path_display_name(r))
+            .collect();
+        let label = if names.len() == 1 { "Repo" } else { "Repos" };
         lines.push(Line::from(vec![
-            Span::styled("   Repo:  ", Style::default().fg(Color::DarkGray)),
-            Span::raw(name),
+            Span::styled(
+                format!("   {label}:  "),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::raw(names.join(", ")),
         ]));
         lines.push(Line::from(""));
     }
@@ -762,8 +802,14 @@ fn draw_git_tools_branch_list(frame: &mut Frame, app: &mut AppState, area: Rect)
         )));
         lines.push(Line::from(""));
 
+        let multi_repo = app.git_tools.selected_repos.len() > 1;
         for branch in &app.git_tools.branches {
-            let mut parts: Vec<Span> = vec![Span::raw(format!("   {}", branch.name))];
+            let branch_label = if multi_repo {
+                format!("   [{}] {}", branch.repo_display_name(), branch.name)
+            } else {
+                format!("   {}", branch.name)
+            };
+            let mut parts: Vec<Span> = vec![Span::raw(branch_label)];
 
             let mut tags = Vec::new();
             if branch.has_local {
