@@ -4,14 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Repolyze — Know your code better.</title>
-  <meta name="description" content="A Rust CLI/TUI tool for analyzing local Git repositories. Contributor stats, activity heatmaps, file metrics, JSON & Markdown export.">
+  <meta name="description" content="A Rust CLI/TUI tool for analyzing local and GitHub Git repositories. Contributor stats, activity heatmaps, file metrics, JSON & Markdown export. No cloning required for GitHub repos.">
   <meta name="keywords" content="git analytics, repository analysis, git stats, contributor statistics, activity heatmap, code metrics, rust cli, terminal ui, tui, git log, commit history, developer tools, open source, homebrew">
   <meta name="author" content="Maxim Gorbatyuk">
   <meta name="robots" content="index, follow">
   <meta property="og:site_name" content="Repolyze">
   <meta property="og:locale" content="en_US">
   <meta property="og:title" content="Repolyze — Know your code better.">
-  <meta property="og:description" content="A Rust CLI/TUI tool for analyzing local Git repositories. Contributor stats, activity heatmaps, file metrics, JSON & Markdown export.">
+  <meta property="og:description" content="A Rust CLI/TUI tool for analyzing local and GitHub Git repositories. Contributor stats, activity heatmaps, file metrics, JSON & Markdown export.">
   <meta property="og:url" content="https://repolyze.app/">
   <meta property="og:type" content="website">
   <meta property="og:image" content="https://repolyze.app/og.svg">
@@ -20,7 +20,7 @@
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Repolyze — Know your code better.">
-  <meta name="twitter:description" content="A Rust CLI/TUI tool for analyzing local Git repositories. Contributor stats, activity heatmaps, file metrics, JSON & Markdown export.">
+  <meta name="twitter:description" content="A Rust CLI/TUI tool for analyzing local and GitHub Git repositories. Contributor stats, activity heatmaps, file metrics, JSON & Markdown export.">
   <meta name="twitter:image" content="https://repolyze.app/og.svg">
   <link rel="canonical" href="https://repolyze.app/">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://www.google-analytics.com https://www.googletagmanager.com;">
@@ -30,7 +30,7 @@
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "Repolyze",
-    "description": "A Rust CLI/TUI tool for analyzing local Git repositories. Contributor stats, activity heatmaps, file metrics, JSON and Markdown export.",
+    "description": "A Rust CLI/TUI tool for analyzing local and GitHub Git repositories. Contributor stats, activity heatmaps, file metrics, JSON and Markdown export. Analyze public GitHub repos without cloning.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "macOS, Linux",
     "url": "https://repolyze.app/",
@@ -62,7 +62,7 @@
         "name": "What is Repolyze?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Repolyze is a Rust CLI/TUI tool for analyzing local Git repositories. It provides contributor statistics, activity heatmaps, file metrics, and supports JSON and Markdown export. All analysis runs locally — no data leaves your machine."
+          "text": "Repolyze is a Rust CLI/TUI tool for analyzing local and GitHub Git repositories. It provides contributor statistics, activity heatmaps, file metrics, and supports JSON and Markdown export. Local repos are analyzed entirely on your machine. Public GitHub repos can be analyzed via the API without cloning."
         }
       },
       {
@@ -113,8 +113,9 @@
             |_|            |___/</pre>
       <h1><span class="typing-cursor" data-typing="Know your code better.">Know your code better.</span></h1>
       <p class="hero-description">
-        A Rust CLI/TUI tool for analyzing local Git repositories.<br>
-        Contributor stats. Activity heatmaps. File metrics. Zero config.
+        A Rust CLI/TUI tool for analyzing local and GitHub repositories.<br>
+        Contributor stats. Activity heatmaps. File metrics. Zero config.<br>
+        Analyze any public GitHub repo without cloning.
       </p>
       <div class="hero-ctas">
         <a href="#install" class="btn btn-primary">$ brew install repolyze</a>
@@ -154,7 +155,7 @@
     <section>
       <div class="container">
         <h2 class="section-title">Features</h2>
-        <p class="section-subtitle">Everything runs locally. No data leaves your machine.</p>
+        <p class="section-subtitle">Works with local repos and public GitHub repositories.</p>
         <div class="features-grid">
           <div class="feature-card animate-on-scroll">
             <div class="feature-icon" aria-hidden="true">{usr}</div>
@@ -200,6 +201,11 @@
             <div class="feature-icon" aria-hidden="true">[&gt;_]</div>
             <h3>TUI and CLI</h3>
             <p>Full-screen interactive TUI with background analysis and auto-discovery of nested repos. Scriptable CLI with JSON, Markdown, and plain-text table output.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon" aria-hidden="true">[gh]</div>
+            <h3>GitHub Remote Analysis</h3>
+            <p>Analyze any public GitHub repository without cloning. Pass a URL via <code>--repo</code> and get contributor stats, activity patterns, and language breakdown via the GitHub API. Prefers <code>gh</code> CLI when available for higher rate limits.</p>
           </div>
         </div>
       </div>
@@ -371,6 +377,26 @@ Fri  <span style="color:#0cc">&#x25a0;</span> <span style="color:#555">&#x25a0;<
           </div>
 
           <div>
+            <p class="usage-label">Analyze a GitHub repository (no clone needed)</p>
+            <div class="terminal-window animate-on-scroll">
+              <div class="terminal-header" aria-hidden="true">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="terminal-title">Terminal</span>
+              </div>
+              <div class="terminal-body">
+<pre><span class="line-num">1</span><span class="prompt">$</span> repolyze analyze contribution \
+<span class="line-num">2</span>    <span class="flag">--repo</span> https://github.com/owner/repo \
+<span class="line-num">3</span>    <span class="flag">--format</span> table
+<span class="line-num">4</span>
+<span class="line-num">5</span><span class="comment"># Or open in the TUI directly:</span>
+<span class="line-num">6</span><span class="prompt">$</span> repolyze <span class="flag">--repo</span> https://github.com/owner/repo</pre>
+              </div>
+            </div>
+          </div>
+
+          <div>
             <p class="usage-label">Launch the interactive TUI</p>
             <div class="terminal-window animate-on-scroll">
               <div class="terminal-header" aria-hidden="true">
@@ -443,7 +469,7 @@ Total                             54           16028            296.81          
  |_| \_\___| .__/ \___/|_|\__, /___\___|
             |_|            |___/</pre>
           <p class="footer-slogan">Know your code better.</p>
-          <p>Analyzed locally. No data leaves your machine.</p>
+          <p>Analyzed locally or via GitHub API. Your data stays yours.</p>
           <p class="footer-version">v0.1.5</p>
         </div>
         <div>
