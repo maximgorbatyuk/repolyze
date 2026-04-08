@@ -69,7 +69,7 @@
 
         <Package Id='*'
             Keywords='Installer'
-            Description='Repository analytics for local Git repositories'
+            Description='Repository analytics for local and GitHub Git repositories'
             Manufacturer='Maxim Gorbatyuk'
             InstallerVersion='450'
             Languages='1033'
