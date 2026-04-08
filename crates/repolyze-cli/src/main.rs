@@ -21,7 +21,14 @@ fn main() -> anyhow::Result<()> {
     let settings = Settings::ensure_and_load(&cwd);
 
     match cli.command {
-        Some(Commands::Tui) | None => repolyze_tui::run(&settings)?,
+        Some(Commands::Tui(args)) => {
+            let initial = initial_repos(args.repos, cli.repos);
+            repolyze_tui::run(initial, &settings)?;
+        }
+        None => {
+            let initial = initial_repos(vec![], cli.repos);
+            repolyze_tui::run(initial, &settings)?;
+        }
         Some(Commands::Analyze(args)) => {
             let repos = default_repos(args.repos);
             let format = args
@@ -38,8 +45,9 @@ fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Compare(args)) => {
             let format: crate::args::OutputFormat = args.format.into();
+            let repos = default_repos(args.repos);
             let output = run::run_analyze(
-                &args.repos,
+                &repos,
                 &crate::args::AnalyzeView::All,
                 &format,
                 None,
@@ -52,10 +60,20 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Merge subcommand-level and global `--repo` flags into an optional initial set for the TUI.
+fn initial_repos(subcommand_repos: Vec<String>, global_repos: Vec<String>) -> Option<Vec<String>> {
+    let repos = if subcommand_repos.is_empty() {
+        global_repos
+    } else {
+        subcommand_repos
+    };
+    if repos.is_empty() { None } else { Some(repos) }
+}
+
 /// If no --repo flags were given, default to the current directory.
-fn default_repos(repos: Vec<PathBuf>) -> Vec<PathBuf> {
+fn default_repos(repos: Vec<String>) -> Vec<String> {
     if repos.is_empty() {
-        vec![PathBuf::from(".")]
+        vec![".".to_string()]
     } else {
         repos
     }

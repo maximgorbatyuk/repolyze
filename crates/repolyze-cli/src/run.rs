@@ -1,12 +1,11 @@
-use std::path::PathBuf;
-
 use repolyze_core::analytics::{
     build_contribution_rows, build_user_activity_rows, build_user_effort_data,
 };
 use repolyze_core::input::resolve_inputs_with_failures;
-use repolyze_core::service::analyze_targets_with_store;
+use repolyze_core::service::{RemoteAnalyzer, analyze_targets_with_store};
 use repolyze_core::settings::Settings;
 use repolyze_git::backend::GitCliBackend;
+use repolyze_github::GitHubBackend;
 use repolyze_metrics::FilesystemMetricsBackend;
 use repolyze_report::json::render_json;
 use repolyze_report::markdown::render_markdown;
@@ -19,7 +18,7 @@ use crate::args::{AnalyzeView, OutputFormat};
 
 /// Run analysis on one or more repositories and return formatted output.
 pub fn run_analyze(
-    repos: &[PathBuf],
+    repos: &[String],
     view: &AnalyzeView,
     format: &OutputFormat,
     email: Option<&str>,
@@ -31,8 +30,16 @@ pub fn run_analyze(
     let git = GitCliBackend;
     let metrics = FilesystemMetricsBackend;
     let store = open_store()?;
+    let github = GitHubBackend::new(None);
+    let has_github_targets = targets.iter().any(|t| t.is_github());
+    let remote: Option<&dyn RemoteAnalyzer> = if has_github_targets {
+        Some(&github)
+    } else {
+        None
+    };
     let start = std::time::Instant::now();
-    let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store, "cli", settings);
+    let mut report =
+        analyze_targets_with_store(&targets, &git, &metrics, &store, remote, "cli", settings);
     let elapsed = start.elapsed();
 
     if !input_failures.is_empty() {
@@ -88,11 +95,14 @@ fn validate_view_format(view: &AnalyzeView, format: &OutputFormat) -> anyhow::Re
     }
 }
 
-fn folder_display(repos: &[PathBuf]) -> String {
+fn folder_display(repos: &[String]) -> String {
     if repos.len() == 1 {
-        repos[0]
-            .canonicalize()
-            .unwrap_or_else(|_| repos[0].clone())
+        if repos[0].contains("github.com/") {
+            return repos[0].clone();
+        }
+        let path = std::path::Path::new(&repos[0]);
+        path.canonicalize()
+            .unwrap_or_else(|_| path.to_path_buf())
             .to_string_lossy()
             .to_string()
     } else {

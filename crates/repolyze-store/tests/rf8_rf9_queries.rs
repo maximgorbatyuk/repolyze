@@ -7,7 +7,7 @@ fn seed_snapshot_with_one_contributor(store: &SqliteStore) -> SnapshotFixture {
         .upsert_contributor(&ContributorRecord::new("alice@example.com", "Alice"))
         .unwrap();
     let payload = serde_json::json!({
-        "repository": { "root": "/tmp/repo-a" },
+        "repository": { "Local": { "root": "/tmp/repo-a" } },
         "contributions": {
             "contributors": [{
                 "name": "Alice",
@@ -138,7 +138,7 @@ fn rf8_and_rf9_queries_merge_same_email_across_snapshots() {
         .upsert_contributor(&ContributorRecord::new("alice@example.com", "Alice"))
         .unwrap();
     let payload = serde_json::json!({
-        "repository": { "root": "/tmp/repo-b" },
+        "repository": { "Local": { "root": "/tmp/repo-b" } },
         "contributions": {
             "contributors": [{
                 "name": "Alice",

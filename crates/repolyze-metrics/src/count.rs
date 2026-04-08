@@ -10,7 +10,10 @@ const MAX_LARGEST_FILES: usize = 10;
 
 /// Analyze size metrics for a repository.
 pub fn analyze_size(target: &RepositoryTarget) -> Result<SizeMetrics, RepolyzeError> {
-    let entries = walk_repository(&target.root);
+    let root = target.as_local_path().ok_or_else(|| {
+        RepolyzeError::GitCommand("analyze_size only supports local targets".to_string())
+    })?;
+    let entries = walk_repository(root);
 
     let mut files: u64 = 0;
     let mut directories: u64 = 0;
@@ -40,10 +43,7 @@ pub fn analyze_size(target: &RepositoryTarget) -> Result<SizeMetrics, RepolyzeEr
                 }
 
                 file_metrics.push(FileMetric {
-                    path: path
-                        .strip_prefix(&target.root)
-                        .unwrap_or(path)
-                        .to_path_buf(),
+                    path: path.strip_prefix(root).unwrap_or(path).to_path_buf(),
                     bytes: *size,
                     lines,
                 });
@@ -149,7 +149,7 @@ mod tests {
     #[test]
     fn size_metrics_skip_ignored_files() {
         let dir = create_test_repo();
-        let target = RepositoryTarget {
+        let target = RepositoryTarget::Local {
             root: dir.path().to_path_buf(),
         };
 
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn line_counts_match_fixture_files() {
         let dir = create_test_repo();
-        let target = RepositoryTarget {
+        let target = RepositoryTarget::Local {
             root: dir.path().to_path_buf(),
         };
 
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn extension_totals_are_aggregated() {
         let dir = create_test_repo();
-        let target = RepositoryTarget {
+        let target = RepositoryTarget::Local {
             root: dir.path().to_path_buf(),
         };
 
@@ -211,7 +211,7 @@ mod tests {
         let binary_content = b"hello\x00world\x00binary";
         std::fs::write(root.join("data.bin"), binary_content).unwrap();
 
-        let target = RepositoryTarget {
+        let target = RepositoryTarget::Local {
             root: root.to_path_buf(),
         };
 

@@ -662,17 +662,26 @@ impl repolyze_core::service::AnalysisStore for SqliteStore {
     fn record_scan_result(
         &self,
         key: Option<&repolyze_core::service::RepositoryCacheMetadata>,
-        repository_root: &std::path::Path,
+        repository_identifier: &str,
         trigger_source: &str,
         cache_status: &str,
         status: &str,
         failure_reason: Option<&str>,
     ) -> Result<(), repolyze_core::error::RepolyzeError> {
-        let canonical_path = repository_root.to_string_lossy().to_string();
-        let display_name = repository_root
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| canonical_path.clone());
+        let canonical_path = repository_identifier.to_string();
+        let display_name = if repository_identifier.contains("github.com/") {
+            // For GitHub URLs, extract "owner/repo" as the display name
+            repository_identifier
+                .rsplit("github.com/")
+                .next()
+                .map(|s| s.trim_end_matches('/').to_string())
+                .unwrap_or_else(|| canonical_path.clone())
+        } else {
+            std::path::Path::new(repository_identifier)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| canonical_path.clone())
+        };
 
         let repo_id = self
             .upsert_repository(&canonical_path, &display_name)

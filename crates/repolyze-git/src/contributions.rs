@@ -13,8 +13,11 @@ use crate::parse::{ParsedCommit, parse_git_log};
 pub fn analyze_contributions(
     target: &RepositoryTarget,
 ) -> Result<(ContributionSummary, Vec<ParsedCommit>), RepolyzeError> {
+    let root = target.as_local_path().ok_or_else(|| {
+        RepolyzeError::GitCommand("analyze_contributions only supports local targets".to_string())
+    })?;
     let output = backend::run_git(
-        &target.root,
+        root,
         &["log", "--format=%H%x1f%an%x1f%ae%x1f%aI", "--numstat"],
     )?;
 

@@ -39,12 +39,7 @@ pub fn render_markdown(report: &ComparisonReport, settings: &Settings) -> String
     out.push_str("| Repository | Files | Lines | Commits | Contributors |\n");
     out.push_str("|---|---|---|---|---|\n");
     for analysis in &report.repositories {
-        let name = analysis
-            .repository
-            .root
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| analysis.repository.root.to_string_lossy().to_string());
+        let name = analysis.repository.display_name();
         out.push_str(&format!(
             "| {} | {} | {} | {} | {} |\n",
             name,
@@ -139,12 +134,7 @@ pub fn render_markdown(report: &ComparisonReport, settings: &Settings) -> String
     out.push_str("| Repository | Files | Directories | Bytes | Lines | Avg File Size |\n");
     out.push_str("|---|---|---|---|---|---|\n");
     for analysis in &report.repositories {
-        let name = analysis
-            .repository
-            .root
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| analysis.repository.root.to_string_lossy().to_string());
+        let name = analysis.repository.display_name();
         out.push_str(&format!(
             "| {} | {} | {} | {} | {} | {:.0} |\n",
             name,
@@ -177,8 +167,7 @@ pub fn render_markdown(report: &ComparisonReport, settings: &Settings) -> String
         for failure in &report.failures {
             out.push_str(&format!(
                 "- **{}**: {}\n",
-                failure.path.display(),
-                failure.reason
+                failure.identifier, failure.reason
             ));
         }
         out.push('\n');
@@ -342,7 +331,7 @@ mod tests {
 
     fn make_two_repo_report() -> ComparisonReport {
         let make_analysis = |name: &str, commits: u64, files: u64| RepositoryAnalysis {
-            repository: RepositoryTarget {
+            repository: RepositoryTarget::Local {
                 root: format!("/tmp/{name}").into(),
             },
             contributions: ContributionSummary {
@@ -434,7 +423,7 @@ mod tests {
     fn markdown_report_includes_failures_when_present() {
         let mut report = make_two_repo_report();
         report.failures.push(PartialFailure {
-            path: "/tmp/bad".into(),
+            identifier: "/tmp/bad".to_string(),
             reason: "not a git repository".to_string(),
         });
 

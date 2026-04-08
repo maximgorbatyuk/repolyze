@@ -12,10 +12,13 @@ impl GitAnalyzer for GitCliBackend {
         &self,
         target: &RepositoryTarget,
     ) -> Result<RepositoryCacheMetadata, RepolyzeError> {
-        let meta = crate::repository::current_head_metadata(&target.root)?;
-        let worktree_is_clean = crate::repository::is_worktree_clean(&target.root)?;
+        let root = target.as_local_path().ok_or_else(|| {
+            RepolyzeError::GitCommand("GitCliBackend only supports local targets".to_string())
+        })?;
+        let meta = crate::repository::current_head_metadata(root)?;
+        let worktree_is_clean = crate::repository::is_worktree_clean(root)?;
         Ok(RepositoryCacheMetadata {
-            repository_root: target.root.clone(),
+            repository_root: root.to_path_buf(),
             history_scope: "head".to_string(),
             head_commit_hash: meta.head_commit_hash,
             branch_name: meta.branch_name,

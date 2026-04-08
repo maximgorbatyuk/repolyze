@@ -281,6 +281,13 @@ fn draw_analyze(frame: &mut Frame, app: &mut AppState, area: Rect) {
                 Style::default().fg(Color::Yellow),
             ),
         ]));
+        // Show progress log from GitHub analysis
+        for msg in &app.progress_log {
+            lines.push(Line::from(Span::styled(
+                format!("   {msg}"),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
     } else if let Some(table) = &app.analysis_table {
         // Analytics view with ASCII table
         for table_line in table.lines() {
@@ -300,12 +307,7 @@ fn draw_analyze(frame: &mut Frame, app: &mut AppState, area: Rect) {
     } else if let Some(report) = &app.analysis_result {
         // All view with summary
         for analysis in &report.repositories {
-            let name = analysis
-                .repository
-                .root
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| analysis.repository.root.to_string_lossy().to_string());
+            let name = analysis.repository.display_name();
             lines.push(Line::from(format!(
                 "   {} \u{2014} {} files, {} commits, {} contributors",
                 name,

@@ -20,7 +20,7 @@ mod tests {
     fn make_report() -> ComparisonReport {
         ComparisonReport {
             repositories: vec![RepositoryAnalysis {
-                repository: RepositoryTarget {
+                repository: RepositoryTarget::Local {
                     root: "/tmp/test-repo".into(),
                 },
                 contributions: ContributionSummary {
@@ -97,7 +97,7 @@ mod tests {
     fn json_export_includes_failures() {
         let mut report = make_report();
         report.failures.push(PartialFailure {
-            path: "/tmp/bad".into(),
+            identifier: "/tmp/bad".to_string(),
             reason: "not a git repository".to_string(),
         });
 

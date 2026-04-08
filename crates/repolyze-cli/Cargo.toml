@@ -1,6 +1,6 @@
 [package]
 name = "repolyze"
-description = "Repository analytics for local Git repositories"
+description = "Repository analytics for local and GitHub Git repositories"
 homepage = "https://repolyze.app"
 version.workspace = true
 edition.workspace = true
@@ -23,6 +23,7 @@ clap.workspace = true
 anyhow.workspace = true
 repolyze-core = { path = "../repolyze-core" }
 repolyze-git = { path = "../repolyze-git" }
+repolyze-github = { path = "../repolyze-github" }
 repolyze-metrics = { path = "../repolyze-metrics" }
 repolyze-report = { path = "../repolyze-report" }
 repolyze-store = { path = "../repolyze-store" }

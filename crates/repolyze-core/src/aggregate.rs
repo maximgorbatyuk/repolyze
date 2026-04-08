@@ -79,7 +79,7 @@ mod tests {
     ) -> RepositoryAnalysis {
         let total_commits: u64 = contributors.iter().map(|c| c.commits).sum();
         RepositoryAnalysis {
-            repository: RepositoryTarget {
+            repository: RepositoryTarget::Local {
                 root: format!("/tmp/{name}").into(),
             },
             contributions: ContributionSummary {
@@ -131,7 +131,7 @@ mod tests {
     #[test]
     fn aggregate_total_lines_changed_counts_additions_and_deletions() {
         let repo = RepositoryAnalysis {
-            repository: RepositoryTarget {
+            repository: RepositoryTarget::Local {
                 root: "/tmp/repo-a".into(),
             },
             contributions: ContributionSummary {
@@ -178,11 +178,11 @@ mod tests {
 
         assert_eq!(report.repositories.len(), 2);
         assert_eq!(
-            report.repositories[0].repository.root.to_str().unwrap(),
+            report.repositories[0].repository.display_path(),
             "/tmp/repo-a"
         );
         assert_eq!(
-            report.repositories[1].repository.root.to_str().unwrap(),
+            report.repositories[1].repository.display_path(),
             "/tmp/repo-b"
         );
     }
@@ -191,7 +191,7 @@ mod tests {
     fn aggregate_includes_failures() {
         let repo_a = make_analysis("repo-a", vec![], 10);
         let failure = PartialFailure {
-            path: "/tmp/bad-repo".into(),
+            identifier: "/tmp/bad-repo".to_string(),
             reason: "not a git repository".to_string(),
         };
 

@@ -239,12 +239,7 @@ pub fn build_repo_comparison(repos: &[RepositoryAnalysis]) -> Vec<RepoComparison
     repos
         .iter()
         .map(|repo| {
-            let name = repo
-                .repository
-                .root
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| repo.repository.root.to_string_lossy().to_string());
+            let name = repo.repository.display_name();
 
             // Union active_dates across all contributors for repo-wide active days
             let mut all_dates: BTreeSet<String> = BTreeSet::new();
@@ -519,7 +514,7 @@ mod tests {
         total_commits: u64,
     ) -> RepositoryAnalysis {
         RepositoryAnalysis {
-            repository: RepositoryTarget {
+            repository: RepositoryTarget::Local {
                 root: format!("/tmp/{name}").into(),
             },
             contributions: ContributionSummary {

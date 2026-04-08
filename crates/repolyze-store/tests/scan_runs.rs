@@ -17,7 +17,7 @@ impl GitAnalyzer for FakeGitAnalyzer {
         target: &RepositoryTarget,
     ) -> Result<RepositoryCacheMetadata, repolyze_core::error::RepolyzeError> {
         Ok(RepositoryCacheMetadata {
-            repository_root: target.root.clone(),
+            repository_root: target.as_local_path().unwrap().to_path_buf(),
             history_scope: "head".to_string(),
             head_commit_hash: "abc123".to_string(),
             branch_name: Some("main".to_string()),
@@ -84,7 +84,7 @@ fn analyze_targets_with_store_records_miss_then_hit_runs() {
     let dir = tempfile::tempdir().unwrap();
     let db_path = dir.path().join("repolyze.db");
     let store = SqliteStore::open(&db_path).unwrap();
-    let target = RepositoryTarget {
+    let target = RepositoryTarget::Local {
         root: "/tmp/repo-a".into(),
     };
 
@@ -93,6 +93,7 @@ fn analyze_targets_with_store_records_miss_then_hit_runs() {
         &FakeGitAnalyzer,
         &FakeMetricsAnalyzer,
         &store,
+        None,
         "tui",
         &Settings::default(),
     );
@@ -101,6 +102,7 @@ fn analyze_targets_with_store_records_miss_then_hit_runs() {
         &FakeGitAnalyzer,
         &FakeMetricsAnalyzer,
         &store,
+        None,
         "tui",
         &Settings::default(),
     );

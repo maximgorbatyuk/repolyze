@@ -5,13 +5,17 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[derive(Parser)]
 #[command(
     name = "repolyze",
-    about = "Repository analytics for local Git repositories",
+    about = "Repository analytics for local and GitHub Git repositories",
     version
 )]
 pub struct Cli {
     /// Working directory (defaults to current directory)
     #[arg(long = "directory", short = 'D', global = true)]
     pub directory: Option<PathBuf>,
+
+    /// Repository path(s) or GitHub URL(s) to open in TUI (only when no subcommand is given)
+    #[arg(long = "repo", global = true)]
+    pub repos: Vec<String>,
 
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -20,11 +24,18 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Launch the interactive TUI
-    Tui,
+    Tui(TuiArgs),
     /// Analyze one or more repositories
     Analyze(AnalyzeArgs),
     /// Compare multiple repositories
     Compare(CompareArgs),
+}
+
+#[derive(clap::Args)]
+pub struct TuiArgs {
+    /// Repository path(s) or GitHub URL(s) to analyze immediately
+    #[arg(long = "repo")]
+    pub repos: Vec<String>,
 }
 
 #[derive(clap::Args)]
@@ -33,9 +44,9 @@ pub struct AnalyzeArgs {
     #[arg(value_enum, default_value = "all")]
     pub view: AnalyzeView,
 
-    /// Repository path(s) to analyze (defaults to current directory)
+    /// Repository path(s) or GitHub URL(s) to analyze (defaults to current directory)
     #[arg(long = "repo")]
-    pub repos: Vec<PathBuf>,
+    pub repos: Vec<String>,
 
     /// Output format
     #[arg(long)]
@@ -52,9 +63,9 @@ pub struct AnalyzeArgs {
 
 #[derive(clap::Args)]
 pub struct CompareArgs {
-    /// Repository path(s) to compare
+    /// Repository path(s) or GitHub URL(s) to compare
     #[arg(long = "repo", required = true)]
-    pub repos: Vec<PathBuf>,
+    pub repos: Vec<String>,
 
     /// Output format
     #[arg(long, default_value = "json")]

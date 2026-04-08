@@ -48,7 +48,7 @@ fn make_activity_stats() -> ContributorActivityStats {
 
 fn make_analysis() -> RepositoryAnalysis {
     RepositoryAnalysis {
-        repository: RepositoryTarget {
+        repository: RepositoryTarget::Local {
             root: "/tmp/repo-a".into(),
         },
         contributions: ContributionSummary {
@@ -104,7 +104,10 @@ fn cache_roundtrip_restores_repository_analysis() {
 
     assert!(loaded.is_some());
     let loaded = loaded.unwrap();
-    assert_eq!(loaded.repository.root, analysis.repository.root);
+    assert_eq!(
+        loaded.repository.display_path(),
+        analysis.repository.display_path()
+    );
     assert_eq!(loaded.contributions.total_commits, 3);
     assert_eq!(loaded.contributions.contributors.len(), 1);
     assert_eq!(loaded.contributions.contributors[0].name, "Alice");
@@ -176,7 +179,7 @@ fn load_snapshot_accepts_legacy_payload_without_activity_by_contributor() {
     let by_weekday = vec![0; 7];
     let heatmap = vec![vec![0; 24]; 7];
     let legacy_payload = serde_json::json!({
-        "repository": { "root": "/tmp/repo-a" },
+        "repository": { "Local": { "root": "/tmp/repo-a" } },
         "contributions": {
             "contributors": [{
                 "name": "Alice",

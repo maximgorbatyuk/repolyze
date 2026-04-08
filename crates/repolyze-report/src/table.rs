@@ -519,7 +519,7 @@ mod tests {
     #[test]
     fn render_analysis_header_preserves_full_datetimes_in_period() {
         let repos = vec![RepositoryAnalysis {
-            repository: repolyze_core::model::RepositoryTarget {
+            repository: repolyze_core::model::RepositoryTarget::Local {
                 root: "/tmp/repo".into(),
             },
             contributions: repolyze_core::model::ContributionSummary {

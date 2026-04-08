@@ -30,7 +30,7 @@ pub trait AnalysisStore {
     fn record_scan_result(
         &self,
         key: Option<&RepositoryCacheMetadata>,
-        repository_root: &std::path::Path,
+        repository_identifier: &str,
         trigger_source: &str,
         cache_status: &str,
         status: &str,
@@ -53,20 +53,35 @@ pub trait MetricsAnalyzer {
     fn analyze_size(&self, target: &RepositoryTarget) -> Result<SizeMetrics, RepolyzeError>;
 }
 
+/// Analyzer for remote GitHub repositories.
+pub trait RemoteAnalyzer {
+    fn analyze_remote(&self, owner: &str, repo: &str) -> Result<RepositoryAnalysis, RepolyzeError>;
+}
+
 pub fn analyze_targets<G: GitAnalyzer, M: MetricsAnalyzer>(
     targets: &[RepositoryTarget],
     git: &G,
     metrics: &M,
+    remote: Option<&dyn RemoteAnalyzer>,
     settings: &Settings,
 ) -> ComparisonReport {
     let mut results = Vec::new();
     let mut failures = Vec::new();
 
     for target in targets {
-        match analyze_target(target, git, metrics) {
+        let result = match target {
+            RepositoryTarget::GitHub { owner, repo } => match remote {
+                Some(r) => r.analyze_remote(owner, repo),
+                None => Err(RepolyzeError::GitHubApi(
+                    "GitHub analysis not available".to_string(),
+                )),
+            },
+            RepositoryTarget::Local { .. } => analyze_target(target, git, metrics),
+        };
+        match result {
             Ok(analysis) => results.push(analysis),
             Err(error) => failures.push(PartialFailure {
-                path: target.root.clone(),
+                identifier: target.display_path(),
                 reason: error.to_string(),
             }),
         }
@@ -80,6 +95,7 @@ pub fn analyze_targets_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: Analysi
     git: &G,
     metrics: &M,
     store: &S,
+    remote: Option<&dyn RemoteAnalyzer>,
     trigger_source: &str,
     settings: &Settings,
 ) -> ComparisonReport {
@@ -87,12 +103,31 @@ pub fn analyze_targets_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: Analysi
     let mut failures = Vec::new();
 
     for target in targets {
+        // GitHub targets bypass the local git/cache pipeline
+        if let RepositoryTarget::GitHub { owner, repo } = target {
+            match remote {
+                Some(r) => match r.analyze_remote(owner, repo) {
+                    Ok(analysis) => results.push(analysis),
+                    Err(error) => failures.push(PartialFailure {
+                        identifier: target.display_path(),
+                        reason: error.to_string(),
+                    }),
+                },
+                None => failures.push(PartialFailure {
+                    identifier: target.display_path(),
+                    reason: "GitHub analysis not available".to_string(),
+                }),
+            }
+            continue;
+        }
+
         let cache_key = match git.cache_metadata(target) {
             Ok(metadata) => metadata,
             Err(error) => {
+                let id = target.display_path();
                 if let Err(e) = store.record_scan_result(
                     None,
-                    &target.root,
+                    &id,
                     trigger_source,
                     "miss",
                     "failed",
@@ -101,7 +136,7 @@ pub fn analyze_targets_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: Analysi
                     eprintln!("warning: failed to record scan result: {e}");
                 }
                 failures.push(PartialFailure {
-                    path: target.root.clone(),
+                    identifier: id,
                     reason: error.to_string(),
                 });
                 continue;
@@ -116,9 +151,10 @@ pub fn analyze_targets_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: Analysi
                 } else {
                     "bypass"
                 };
+                let id = target.display_path();
                 if let Err(e) = store.record_scan_result(
                     Some(&cache_key),
-                    &target.root,
+                    &id,
                     trigger_source,
                     cache_status,
                     "failed",
@@ -127,7 +163,7 @@ pub fn analyze_targets_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: Analysi
                     eprintln!("warning: failed to record scan result: {e}");
                 }
                 failures.push(PartialFailure {
-                    path: target.root.clone(),
+                    identifier: id,
                     reason: error.to_string(),
                 });
             }
@@ -145,17 +181,14 @@ fn analyze_target_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: AnalysisStor
     store: &S,
     trigger_source: &str,
 ) -> Result<RepositoryAnalysis, RepolyzeError> {
+    let id = target.display_path();
+
     if cache_key.cacheable
         && let Some(cached) = store.load_snapshot(cache_key)?
     {
-        if let Err(e) = store.record_scan_result(
-            Some(cache_key),
-            &target.root,
-            trigger_source,
-            "hit",
-            "success",
-            None,
-        ) {
+        if let Err(e) =
+            store.record_scan_result(Some(cache_key), &id, trigger_source, "hit", "success", None)
+        {
             eprintln!("warning: failed to record scan result: {e}");
         }
         return Ok(cached);
@@ -169,7 +202,7 @@ fn analyze_target_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: AnalysisStor
         }
         if let Err(e) = store.record_scan_result(
             Some(cache_key),
-            &target.root,
+            &id,
             trigger_source,
             "miss",
             "success",
@@ -180,7 +213,7 @@ fn analyze_target_with_store<G: GitAnalyzer, M: MetricsAnalyzer, S: AnalysisStor
     } else {
         if let Err(e) = store.record_scan_result(
             Some(cache_key),
-            &target.root,
+            &id,
             trigger_source,
             "bypass",
             "success",
@@ -246,7 +279,7 @@ mod tests {
         fn record_scan_result(
             &self,
             _key: Option<&RepositoryCacheMetadata>,
-            _repository_root: &std::path::Path,
+            _repository_identifier: &str,
             _trigger_source: &str,
             cache_status: &str,
             status: &str,
@@ -267,7 +300,7 @@ mod tests {
             target: &RepositoryTarget,
         ) -> Result<RepositoryCacheMetadata, RepolyzeError> {
             Ok(RepositoryCacheMetadata {
-                repository_root: target.root.clone(),
+                repository_root: target.as_local_path().unwrap().to_path_buf(),
                 history_scope: "head".to_string(),
                 head_commit_hash: "abc123".to_string(),
                 branch_name: Some("main".to_string()),
@@ -292,7 +325,7 @@ mod tests {
 
     fn make_repository_analysis(path: &str) -> RepositoryAnalysis {
         RepositoryAnalysis {
-            repository: RepositoryTarget {
+            repository: RepositoryTarget::Local {
                 root: PathBuf::from(path),
             },
             contributions: ContributionSummary {
@@ -317,7 +350,7 @@ mod tests {
 
     #[test]
     fn analyze_target_uses_cached_snapshot_when_key_matches() {
-        let target = RepositoryTarget {
+        let target = RepositoryTarget::Local {
             root: "/tmp/repo-a".into(),
         };
         let cached = make_repository_analysis("/tmp/repo-a");
@@ -330,14 +363,15 @@ mod tests {
             &git,
             &metrics,
             &store,
+            None,
             "cli",
             &Settings::default(),
         );
 
         assert_eq!(result.repositories.len(), 1);
         assert_eq!(
-            result.repositories[0].repository.root,
-            cached.repository.root
+            result.repositories[0].repository.display_path(),
+            cached.repository.display_path()
         );
         assert_eq!(
             store.scan_events.borrow().as_slice(),

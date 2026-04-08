@@ -18,7 +18,7 @@ use repolyze_core::analytics::{
     build_contribution_rows, build_heatmap_data, build_repo_comparison, build_user_activity_rows,
     build_user_effort_data,
 };
-use repolyze_core::input::{resolve_input, resolve_inputs_with_failures};
+use repolyze_core::input::{resolve_inputs_with_failures, resolve_single_input};
 use repolyze_core::model::{ComparisonReport, HeatmapData};
 use repolyze_core::service::analyze_targets_with_store;
 use repolyze_core::settings::Settings;
@@ -55,7 +55,7 @@ struct BranchDeleteProgress {
     done: bool, // true on the final message
 }
 
-pub fn run(settings: &Settings) -> anyhow::Result<()> {
+pub fn run(initial_repos: Option<Vec<String>>, settings: &Settings) -> anyhow::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -64,8 +64,17 @@ pub fn run(settings: &Settings) -> anyhow::Result<()> {
 
     let mut app = AppState::new();
     let mut bg_receiver: Option<mpsc::Receiver<AnalysisCompletion>> = None;
+    let mut progress_rx: Option<mpsc::Receiver<String>> = None;
     let mut branch_list_rx: Option<mpsc::Receiver<BranchListResult>> = None;
     let mut branch_delete_rx: Option<mpsc::Receiver<BranchDeleteProgress>> = None;
+
+    // If repos were provided via --repo, immediately start analysis
+    if let Some(repos) = initial_repos {
+        app.input_paths = repos;
+        app.selected_analyze_view = app::AnalyzeView::All;
+        app.active_screen = app::Screen::Analyze;
+        app.dispatch_analyze();
+    }
 
     loop {
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
@@ -87,19 +96,30 @@ pub fn run(settings: &Settings) -> anyhow::Result<()> {
             app.spinner_frame = app.spinner_frame.wrapping_add(1);
         }
 
+        // Drain progress messages from background thread
+        if let Some(rx) = &progress_rx {
+            while let Ok(msg) = rx.try_recv() {
+                app.progress_log.push(msg);
+            }
+        }
+
         // Start pending actions on background thread
         if let Some(action) = app.take_action() {
             match action {
                 AppAction::StartAnalyze { paths, view } => {
                     app.is_loading = true;
                     app.spinner_frame = 0;
+                    app.progress_log.clear();
                     let settings_clone = settings.clone();
                     let (tx, rx) = mpsc::channel();
+                    let (ptx, prx) = mpsc::channel();
                     std::thread::spawn(move || {
-                        let result = compute_analysis(paths, view, open_store, &settings_clone);
+                        let result =
+                            compute_analysis(paths, view, open_store, &settings_clone, Some(ptx));
                         tx.send(result).ok();
                     });
                     bg_receiver = Some(rx);
+                    progress_rx = Some(prx);
                 }
                 AppAction::RenderUserEffort => {
                     render_user_effort_for_selected(&mut app, settings);
@@ -282,10 +302,11 @@ pub fn run(settings: &Settings) -> anyhow::Result<()> {
 }
 
 fn compute_analysis<F>(
-    paths: Vec<PathBuf>,
+    paths: Vec<String>,
     view: AnalyzeView,
     open_store_fn: F,
     settings: &Settings,
+    progress_tx: Option<mpsc::Sender<String>>,
 ) -> AnalysisCompletion
 where
     F: Fn() -> anyhow::Result<repolyze_store::sqlite::SqliteStore>,
@@ -293,6 +314,15 @@ where
     let (targets, input_failures) = resolve_inputs_with_failures(&paths);
     let git = GitCliBackend;
     let metrics = FilesystemMetricsBackend;
+    let has_github_targets = targets.iter().any(|t| t.is_github());
+    let github = if has_github_targets {
+        Some(repolyze_github::GitHubBackend::new(progress_tx))
+    } else {
+        None
+    };
+    let remote: Option<&dyn repolyze_core::service::RemoteAnalyzer> = github
+        .as_ref()
+        .map(|g| g as &dyn repolyze_core::service::RemoteAnalyzer);
     let store = match open_store_fn() {
         Ok(store) => store,
         Err(error) => {
@@ -316,7 +346,8 @@ where
         }
     };
     let start = std::time::Instant::now();
-    let mut report = analyze_targets_with_store(&targets, &git, &metrics, &store, "tui", settings);
+    let mut report =
+        analyze_targets_with_store(&targets, &git, &metrics, &store, remote, "tui", settings);
     let elapsed = start.elapsed();
     let failure_count = input_failures.len() + report.failures.len();
 
@@ -451,7 +482,7 @@ where
 
     match action {
         AppAction::StartAnalyze { paths, view } => {
-            let completion = compute_analysis(paths, view, &open_store_fn, settings);
+            let completion = compute_analysis(paths, view, &open_store_fn, settings, None);
             apply_analysis_completion(app, completion, settings);
         }
         AppAction::RenderUserEffort => {
@@ -739,11 +770,12 @@ fn probe_workspace() -> app::WorkspaceInfo {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let folder = cwd.to_string_lossy().to_string();
 
-    match resolve_input(&cwd) {
+    match resolve_single_input(&cwd.to_string_lossy()) {
         Ok(targets) => {
             let repo_count = targets.len();
             let is_single_repo = repo_count == 1
-                && targets[0].root == cwd.canonicalize().unwrap_or_else(|_| cwd.clone());
+                && targets[0].as_local_path()
+                    == Some(&cwd.canonicalize().unwrap_or_else(|_| cwd.clone()));
             app::WorkspaceInfo {
                 folder,
                 is_single_repo,
@@ -760,9 +792,12 @@ fn probe_workspace() -> app::WorkspaceInfo {
 
 fn probe_git_tools_workspace(app: &mut AppState) {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    match resolve_input(&cwd) {
+    match resolve_single_input(&cwd.to_string_lossy()) {
         Ok(targets) => {
-            let repos: Vec<PathBuf> = targets.into_iter().map(|t| t.root).collect();
+            let repos: Vec<PathBuf> = targets
+                .into_iter()
+                .filter_map(|t| t.as_local_path().map(|p| p.to_path_buf()))
+                .collect();
             if repos.len() == 1 {
                 app.git_tools.selected_repos = repos.clone();
                 app.git_tools.repo_checked = vec![true];
@@ -786,7 +821,6 @@ fn open_store() -> anyhow::Result<repolyze_store::sqlite::SqliteStore> {
 #[cfg(test)]
 mod tests {
     use anyhow::anyhow;
-    use std::path::PathBuf;
     use std::process::Command;
 
     use super::*;
@@ -833,7 +867,8 @@ mod tests {
     fn execute_pending_action_updates_app_state() {
         let dir = create_fixture_repo();
         let mut app = AppState::new();
-        app.input_paths.push(dir.path().to_path_buf());
+        app.input_paths
+            .push(dir.path().to_string_lossy().to_string());
         app.dispatch_analyze();
 
         execute_pending_action(&mut app).unwrap();
@@ -849,7 +884,7 @@ mod tests {
     fn execute_pending_action_handles_store_open_failure() {
         let mut app = AppState::new();
         app.pending_action = Some(AppAction::StartAnalyze {
-            paths: vec![PathBuf::from("/tmp/repo")],
+            paths: vec!["/tmp/repo".to_string()],
             view: AnalyzeView::All,
         });
 

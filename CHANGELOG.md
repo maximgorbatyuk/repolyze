@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.10] - 2026-04-08
+
+### Added
+
+- **GitHub remote repository analysis**: Analyze public GitHub repositories without cloning. Pass a GitHub URL via `--repo` (e.g., `repolyze analyze contribution --repo https://github.com/owner/repo --format table`). Fetches commit history, contributor statistics, activity heatmap, language breakdown, and repo size via the GitHub API. Supports `https://github.com/owner/repo`, `github.com/owner/repo`, and `.git` suffix variants.
+- **TUI `--repo` flag**: Launch the TUI with a predefined repository — `repolyze --repo https://github.com/owner/repo` opens the TUI and immediately starts analysis with the spinner. Also works with `repolyze tui --repo ...`. Supports both local paths and GitHub URLs.
+- **TUI progress log for GitHub analysis**: During GitHub API fetching, the TUI displays step-by-step progress messages below the spinner (e.g., "Fetching contributor statistics...", "Fetched 100 commits").
+- **`gh` CLI integration with HTTP fallback**: When `gh` CLI is installed and authenticated, API calls use it for higher rate limits (5000 req/hr). Otherwise, falls back to unauthenticated direct HTTP requests via `ureq` (60 req/hr). Detection is automatic at startup.
+- **New `repolyze-github` crate**: Dedicated crate for GitHub API integration with dual HTTP backend, GitHub statistics endpoint mapping (`/stats/contributors`, `/stats/punch_card`, `/languages`), pagination, rate-limit logging, and retry-with-backoff for 202 (computing) responses.
+- **`RemoteAnalyzer` trait**: New service trait in `repolyze-core` for remote repository analysis, implemented by `GitHubBackend`. The analysis pipeline dispatches to the appropriate backend based on target type.
+
+### Changed
+
+- **`RepositoryTarget` is now an enum**: Refactored from a struct with `root: PathBuf` to an enum with `Local { root }` and `GitHub { owner, repo }` variants. Helper methods `display_name()`, `display_path()`, `as_local_path()`, and `is_github()` minimize call-site churn.
+- **`--repo` accepts URLs**: The `--repo` flag in `analyze`, `compare`, and `tui` subcommands now accepts both local filesystem paths and GitHub URLs. Input resolution detects GitHub URLs before attempting filesystem operations.
+- **`PartialFailure.path` renamed to `identifier`**: Changed from `PathBuf` to `String` so it correctly represents both local paths and GitHub URLs.
+- **`AnalysisStore::record_scan_result` parameter**: Changed `repository_root: &Path` to `repository_identifier: &str` to support both local paths and GitHub identifiers.
+- **Schema version bumped to 4**: Invalidates cached snapshots from prior versions due to `RepositoryTarget` serialization format change (struct → enum).
+- **Removed dead `AnalysisRequest` type**: Unused struct removed from `repolyze-core`.
+
+### Known Limitations (GitHub remote)
+
+- `files_touched` and `file_extensions` are reported as 0/empty for remote repos (would require per-commit API calls).
+- `total_lines`, `non_empty_lines`, `blank_lines`, `files`, `directories` in size metrics are 0 (filesystem data unavailable without cloning).
+- `by_extension` in size metrics shows language names (from GitHub's language detection) rather than file extensions.
+- Commit list is limited to what GitHub's paginated API returns; `/stats/contributors` provides accurate aggregate totals regardless.
+
 ## [0.1.9] - 2026-04-07
 
 ### Added

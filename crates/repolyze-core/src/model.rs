@@ -4,14 +4,45 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
-pub struct AnalysisRequest {
-    pub repositories: Vec<PathBuf>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RepositoryTarget {
+    Local { root: PathBuf },
+    GitHub { owner: String, repo: String },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RepositoryTarget {
-    pub root: PathBuf,
+impl RepositoryTarget {
+    /// Short display name: directory name for local, `owner/repo` for GitHub.
+    pub fn display_name(&self) -> String {
+        match self {
+            Self::Local { root } => root
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| root.to_string_lossy().to_string()),
+            Self::GitHub { owner, repo } => format!("{owner}/{repo}"),
+        }
+    }
+
+    /// Full path string for local, URL for GitHub.
+    pub fn display_path(&self) -> String {
+        match self {
+            Self::Local { root } => root.to_string_lossy().to_string(),
+            Self::GitHub { owner, repo } => {
+                format!("https://github.com/{owner}/{repo}")
+            }
+        }
+    }
+
+    /// Returns the local filesystem path if this is a local target.
+    pub fn as_local_path(&self) -> Option<&std::path::Path> {
+        match self {
+            Self::Local { root } => Some(root),
+            Self::GitHub { .. } => None,
+        }
+    }
+
+    pub fn is_github(&self) -> bool {
+        matches!(self, Self::GitHub { .. })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,7 +150,7 @@ pub struct ComparisonSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartialFailure {
-    pub path: PathBuf,
+    pub identifier: String,
     pub reason: String,
 }
 
@@ -221,15 +252,6 @@ impl HeatmapData {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn analysis_request_supports_multiple_repositories() {
-        let request = AnalysisRequest {
-            repositories: vec!["/tmp/a".into(), "/tmp/b".into()],
-        };
-
-        assert_eq!(request.repositories.len(), 2);
-    }
 
     #[test]
     fn activity_summary_defaults_to_zeros() {

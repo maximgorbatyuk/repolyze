@@ -22,4 +22,10 @@ pub enum RepolyzeError {
 
     #[error("no git repositories found under directory: {0}")]
     NoRepositoriesFound(PathBuf),
+
+    #[error("GitHub API error: {0}")]
+    GitHubApi(String),
+
+    #[error("HTTP error: {0}")]
+    HttpError(String),
 }

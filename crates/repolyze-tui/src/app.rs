@@ -246,7 +246,7 @@ pub struct WorkspaceInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppAction {
     StartAnalyze {
-        paths: Vec<PathBuf>,
+        paths: Vec<String>,
         view: AnalyzeView,
     },
     RenderUserEffort,
@@ -273,7 +273,7 @@ pub struct AppState {
     pub errors: Vec<PartialFailure>,
     pub pending_action: Option<AppAction>,
     pub input_buffer: String,
-    pub input_paths: Vec<PathBuf>,
+    pub input_paths: Vec<String>,
     pub status_message: String,
     pub analyze_menu_selected: usize,
     pub selected_analyze_view: AnalyzeView,
@@ -283,6 +283,7 @@ pub struct AppState {
     pub workspace_info: Option<WorkspaceInfo>,
     pub is_loading: bool,
     pub spinner_frame: usize,
+    pub progress_log: Vec<String>,
     pub scroll_offset: u16,
     pub content_height: u16,
     pub visible_height: u16,
@@ -326,6 +327,7 @@ impl AppState {
             workspace_info: None,
             is_loading: false,
             spinner_frame: 0,
+            progress_log: Vec::new(),
             scroll_offset: 0,
             content_height: 0,
             visible_height: 0,
@@ -412,7 +414,7 @@ impl AppState {
             self.scroll_offset = 0;
             self.input_paths.clear();
             self.input_buffer.clear();
-            self.input_paths.push(PathBuf::from("."));
+            self.input_paths.push(".".to_string());
             self.active_screen = Screen::Analyze;
             self.dispatch_analyze();
         }
@@ -458,7 +460,7 @@ impl AppState {
     pub fn add_input_path(&mut self) {
         let path = self.input_buffer.trim().to_string();
         if !path.is_empty() {
-            self.input_paths.push(PathBuf::from(path));
+            self.input_paths.push(path);
             self.input_buffer.clear();
         }
     }
@@ -709,12 +711,12 @@ mod tests {
     #[test]
     fn dispatch_analyze_creates_action() {
         let mut app = AppState::new();
-        app.input_paths.push(PathBuf::from("/tmp/repo"));
+        app.input_paths.push("/tmp/repo".to_string());
         app.dispatch_analyze();
         assert_eq!(
             app.pending_action,
             Some(AppAction::StartAnalyze {
-                paths: vec![PathBuf::from("/tmp/repo")],
+                paths: vec!["/tmp/repo".to_string()],
                 view: AnalyzeView::All,
             })
         );
@@ -730,7 +732,7 @@ mod tests {
     #[test]
     fn take_action_clears_pending() {
         let mut app = AppState::new();
-        app.input_paths.push(PathBuf::from("/tmp/repo"));
+        app.input_paths.push("/tmp/repo".to_string());
         app.dispatch_analyze();
         let action = app.take_action();
         assert!(action.is_some());
@@ -742,7 +744,7 @@ mod tests {
         let mut app = AppState::new();
         app.input_buffer = "/tmp/repo".to_string();
         app.add_input_path();
-        assert_eq!(app.input_paths, vec![PathBuf::from("/tmp/repo")]);
+        assert_eq!(app.input_paths, vec!["/tmp/repo".to_string()]);
         assert!(app.input_buffer.is_empty());
     }
 
@@ -780,7 +782,7 @@ mod tests {
         assert_eq!(
             app.pending_action,
             Some(AppAction::StartAnalyze {
-                paths: vec![PathBuf::from(".")],
+                paths: vec![".".to_string()],
                 view: AnalyzeView::Contribution,
             })
         );
@@ -801,7 +803,7 @@ mod tests {
         });
         app.analysis_table = Some("stale".to_string());
         app.input_buffer = "old".to_string();
-        app.input_paths.push(PathBuf::from("/tmp/old"));
+        app.input_paths.push("/tmp/old".to_string());
         app.analyze_menu_selected = 2;
         app.select_analyze_view();
         assert_eq!(app.active_screen, Screen::Analyze);

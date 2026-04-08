@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Repolyze is a Rust CLI/TUI tool for analyzing local Git repositories. It ships a single binary (`repolyze`) that defaults to a full-screen TUI and also exposes `analyze` and `compare` subcommands for scripting.
+Repolyze is a Rust CLI/TUI tool for analyzing Git repositories — both local and remote GitHub repos. It ships a single binary (`repolyze`) that defaults to a full-screen TUI and also exposes `analyze` and `compare` subcommands for scripting. GitHub repositories are analyzed via the GitHub API without cloning.
 
 ## Architecture
 
@@ -14,6 +14,7 @@ Rust workspace with one binary crate and multiple library crates:
 - **repolyze-tui** — TUI app state, event loop, rendering (thin presentation layer, no domain logic). Includes Git Tools screens (branch cleanup with repo picker and progress tracking) and contributor picker for user effort view
 - **repolyze-core** — Shared domain types (`AnalysisRequest`, `RepositoryTarget`, `RepositoryAnalysis`, `HeatmapData`, `UserEffortData`), service traits (`GitAnalyzer`, `MetricsAnalyzer`), input validation, error types, aggregation, analytics builders (contribution rows, activity rows, heatmap, repo comparison, user effort, `get_contributor_emails`), `date_util` module (date arithmetic without chrono)
 - **repolyze-git** — Git subprocess backend, commit history parsing, contribution stats, activity summaries, branch management (`branches` module: list merged/stale branches, delete with protected-branch guard)
+- **repolyze-github** — GitHub API backend for remote repository analysis. Dual HTTP transport: prefers `gh` CLI (5000 req/hr) when authenticated, falls back to `ureq` direct HTTP (60 req/hr unauthenticated). Uses `/stats/contributors`, `/stats/punch_card`, and `/languages` endpoints for efficient data fetching
 - **repolyze-metrics** — `.gitignore`-aware repo walking, file/line/byte counting, extension breakdowns
 - **repolyze-report** — JSON, Markdown, and plain-text table report rendering. Table renderer (`table.rs`) provides `render_plain_table` and specialized functions for contribution, activity, heatmap, and repo comparison output
 - **repolyze-store** — SQLite cache (`rusqlite`), database bootstrap, migrations, snapshot read/write queries
@@ -46,6 +47,7 @@ repolyze tui                             # launch TUI (explicit)
 repolyze analyze                         # analyze current directory, JSON to stdout
 repolyze analyze -D /path/to/repo        # analyze a specific directory
 repolyze analyze --repo ./a --repo ./b   # analyze specific repos
+repolyze analyze --repo https://github.com/owner/repo  # analyze a GitHub repo (no clone)
 repolyze analyze --format md --output report.md  # Markdown to file
 repolyze analyze contribution --format table                  # contribution table to stdout
 repolyze analyze activity --format table                      # activity table to stdout
@@ -75,7 +77,7 @@ Release artifacts are built by GitHub Actions on version tags via `cargo-dist`. 
 ## Design Constraints
 
 - No language-aware parsing (classes, functions) in v1
-- Local filesystem analysis only — no remote GitHub/GitLab
+- GitHub remote analysis via API (no cloning). Prefers `gh` CLI when available; falls back to unauthenticated HTTP. Some fields (files_touched, file_extensions, line counts) are unavailable for remote repos
 - Batch analysis tolerates partial failures (one bad repo doesn't abort the run)
 - TUI is a thin presentation layer — widgets never compute Git or filesystem metrics directly
 - TUI analysis runs on a background thread via `mpsc::channel`; the event loop uses `poll(100ms)` for non-blocking input
