@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] - 2026-04-10
+
+### Improved
+
+- **Branch cleanup progress screen redesigned**: The deletion progress screen now shows all branches upfront as a full list. Pending branches appear in grey, the currently-processing branch is highlighted in yellow with an animated spinner, and completed branches turn white with a green checkmark or red cross. Replaces the previous append-only log that didn't handle large branch counts well.
+- **Deletion detail for each branch**: Each completed branch now shows what was actually removed — `(local)`, `(remote)`, `(local, remote)`, or failure details like `(local failed, remote)`. Previously only a combined success/failure icon was shown with no breakdown.
+- **Protected branches shown before deletion**: The branch list confirmation screen now displays a "Protected branches (will not be touched)" section listing protected branches (main, master, dev, etc.) that exist in the selected repositories. Previously these were silently filtered with no visibility.
+- **Progress counter and current repo indicator**: The progress screen shows a `Removed N/Total` counter at the top. In multi-repo mode, a "Now processing: repo-name" line indicates which repository is being operated on.
+- **Auto-scroll during deletion**: The progress view automatically scrolls to keep the currently-processing branch visible when the list exceeds the terminal height.
+
 ## [0.1.10] - 2026-04-08
 
 ### Added
