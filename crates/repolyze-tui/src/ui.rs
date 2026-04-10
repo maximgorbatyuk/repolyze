@@ -12,7 +12,8 @@ use repolyze_core::model::HeatmapData;
 use repolyze_report::table::{HEATMAP_DESC, HEATMAP_TITLE};
 
 use crate::app::{
-    ANALYZE_MENU_ITEMS, AnalyzeView, AppState, GIT_TOOLS_MENU_ITEMS, GitToolsMode, Screen,
+    ANALYZE_MENU_ITEMS, AnalyzeView, AppState, BranchProgress, GIT_TOOLS_MENU_ITEMS, GitToolsMode,
+    Screen,
 };
 
 const LOGO: &str = r#"
@@ -795,6 +796,29 @@ fn draw_git_tools_branch_list(frame: &mut Frame, app: &mut AppState, area: Rect)
             Style::default().fg(Color::DarkGray),
         )));
         lines.push(Line::from(""));
+
+        let multi_repo = app.git_tools.selected_repos.len() > 1;
+
+        // Show protected branches that exist in the selected repos
+        if !app.git_tools.protected_branches.is_empty() {
+            lines.push(Line::from(Span::styled(
+                " Protected branches (will not be touched):",
+                Style::default().fg(Color::DarkGray),
+            )));
+            for (repo_name, branch_name) in &app.git_tools.protected_branches {
+                let label = if multi_repo {
+                    format!("   [{repo_name}] {branch_name}")
+                } else {
+                    format!("   {branch_name}")
+                };
+                lines.push(Line::from(Span::styled(
+                    label,
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+            lines.push(Line::from(""));
+        }
+
         lines.push(Line::from(Span::styled(
             format!(
                 " The following {} branch(es) will be deleted:",
@@ -803,8 +827,6 @@ fn draw_git_tools_branch_list(frame: &mut Frame, app: &mut AppState, area: Rect)
             Style::default().fg(Color::Yellow),
         )));
         lines.push(Line::from(""));
-
-        let multi_repo = app.git_tools.selected_repos.len() > 1;
         for branch in &app.git_tools.branches {
             let branch_label = if multi_repo {
                 format!("   [{}] {}", branch.repo_display_name(), branch.name)
@@ -849,6 +871,20 @@ fn draw_git_tools_branch_list(frame: &mut Frame, app: &mut AppState, area: Rect)
 }
 
 fn draw_git_tools_progress(frame: &mut Frame, app: &mut AppState, area: Rect) {
+    let total = app.git_tools.progress.len();
+    let completed = app
+        .git_tools
+        .progress
+        .iter()
+        .filter(|p| p.processed)
+        .count();
+    let success_count = app
+        .git_tools
+        .progress
+        .iter()
+        .filter(|p| p.processed && p.local_ok.unwrap_or(true) && p.remote_ok.unwrap_or(true))
+        .count();
+
     let mut lines = vec![
         Line::from(Span::styled(
             " Git Tools \u{2014} Deleting Branches",
@@ -857,60 +893,91 @@ fn draw_git_tools_progress(frame: &mut Frame, app: &mut AppState, area: Rect) {
         Line::from(""),
     ];
 
-    if !app.git_tools.done && app.git_tools.progress.is_empty() {
-        let frame_idx = app.spinner_frame % SPINNER_FRAMES.len();
-        let spinner = SPINNER_FRAMES[frame_idx];
-        lines.push(Line::from(vec![
-            Span::styled(format!(" {spinner}"), Style::default().fg(Color::Cyan)),
-            Span::styled(
-                " Starting deletion...".to_string(),
-                Style::default().fg(Color::Yellow),
-            ),
-        ]));
-    }
-
-    for (name, success) in &app.git_tools.progress {
-        let (icon, color) = if *success {
-            ("\u{2713}", Color::Green) // checkmark
-        } else {
-            ("\u{2717}", Color::Red) // x mark
-        };
-        lines.push(Line::from(vec![
-            Span::styled(format!("   {icon} "), Style::default().fg(color)),
-            Span::raw(name),
-        ]));
-    }
-
+    // Progress counter
     if app.git_tools.done {
-        let total = app.git_tools.progress.len();
-        let success_count = app.git_tools.progress.iter().filter(|(_, ok)| *ok).count();
-        lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            format!(" Done. {success_count}/{total} branch(es) deleted."),
+            format!(" Done. {success_count}/{total} branch(es) deleted successfully."),
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         )));
-        lines.push(Line::from(""));
+    } else {
+        lines.push(Line::from(Span::styled(
+            format!(" Removed {completed}/{total}"),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )));
+    }
+
+    // "Now processing" line or spinner
+    if !app.git_tools.done {
+        let multi_repo = app.git_tools.selected_repos.len() > 1;
+        if multi_repo && !app.git_tools.current_repo.is_empty() {
+            lines.push(Line::from(Span::styled(
+                format!(" Now processing: {}", app.git_tools.current_repo),
+                Style::default().fg(Color::Yellow),
+            )));
+        } else {
+            let frame_idx = app.spinner_frame % SPINNER_FRAMES.len();
+            let spinner = SPINNER_FRAMES[frame_idx];
+            lines.push(Line::from(vec![
+                Span::styled(format!(" {spinner}"), Style::default().fg(Color::Cyan)),
+                Span::styled(" Deleting...", Style::default().fg(Color::Yellow)),
+            ]));
+        }
+    }
+    lines.push(Line::from(""));
+
+    // Full branch list
+    for (i, progress) in app.git_tools.progress.iter().enumerate() {
+        if progress.processed {
+            let overall_success =
+                progress.local_ok.unwrap_or(true) && progress.remote_ok.unwrap_or(true);
+            let (icon, icon_color) = if overall_success {
+                ("\u{2713}", Color::Green)
+            } else {
+                ("\u{2717}", Color::Red)
+            };
+            let detail = format_delete_detail(progress);
+            lines.push(Line::from(vec![
+                Span::styled(format!("   {icon} "), Style::default().fg(icon_color)),
+                Span::styled(progress.name.clone(), Style::default().fg(Color::White)),
+                Span::styled(
+                    format!("  ({detail})"),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
+        } else {
+            let is_current = i == app.git_tools.current_index && !app.git_tools.done;
+            if is_current {
+                let frame_idx = app.spinner_frame % SPINNER_FRAMES.len();
+                let spinner = SPINNER_FRAMES[frame_idx];
+                lines.push(Line::from(vec![
+                    Span::styled(format!("   {spinner} "), Style::default().fg(Color::Cyan)),
+                    Span::styled(progress.name.clone(), Style::default().fg(Color::Yellow)),
+                ]));
+            } else {
+                lines.push(Line::from(Span::styled(
+                    format!("   \u{2022} {}", progress.name),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+        }
+    }
+
+    // Footer
+    lines.push(Line::from(""));
+    if app.git_tools.done {
         lines.push(hints_line(&[
             ("Enter/Esc", "Back"),
             ("\u{2191}\u{2193}", "Scroll"),
             ("Q", "Quit"),
         ]));
-    } else if !app.git_tools.progress.is_empty() {
-        let frame_idx = app.spinner_frame % SPINNER_FRAMES.len();
-        let spinner = SPINNER_FRAMES[frame_idx];
-        lines.push(Line::from(""));
-        lines.push(Line::from(vec![
-            Span::styled(format!(" {spinner}"), Style::default().fg(Color::Cyan)),
-            Span::styled(
-                format!(
-                    " Deleting... ({}/{})",
-                    app.git_tools.progress.len(),
-                    app.git_tools.branches.len()
-                ),
-                Style::default().fg(Color::Yellow),
-            ),
+    } else {
+        lines.push(hints_line(&[
+            ("Esc", "Cancel"),
+            ("\u{2191}\u{2193}", "Scroll"),
         ]));
     }
 
@@ -919,4 +986,23 @@ fn draw_git_tools_progress(frame: &mut Frame, app: &mut AppState, area: Rect) {
 
     let paragraph = Paragraph::new(lines).scroll((app.git_tools.scroll, 0));
     frame.render_widget(paragraph, area);
+}
+
+fn format_delete_detail(p: &BranchProgress) -> String {
+    let mut parts = Vec::new();
+    match p.local_ok {
+        Some(true) => parts.push("local"),
+        Some(false) => parts.push("local failed"),
+        None => {}
+    }
+    match p.remote_ok {
+        Some(true) => parts.push("remote"),
+        Some(false) => parts.push("remote failed"),
+        None => {}
+    }
+    if parts.is_empty() {
+        "no action".to_string()
+    } else {
+        parts.join(", ")
+    }
 }

@@ -97,13 +97,28 @@ pub const GIT_TOOLS_MENU_ITEMS: [(&str, &str, GitToolsMode); 2] = [
     ),
 ];
 
+/// Rich progress info for a single branch deletion.
+#[derive(Debug, Clone)]
+pub struct BranchProgress {
+    pub name: String,
+    pub local_ok: Option<bool>,
+    pub remote_ok: Option<bool>,
+    pub processed: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct GitToolsState {
     pub selected: usize,
     pub mode: Option<GitToolsMode>,
     pub input: String,
     pub branches: Vec<BranchInfo>,
-    pub progress: Vec<(String, bool)>,
+    /// Protected branches found in selected repos: (repo_display_name, branch_name).
+    pub protected_branches: Vec<(String, String)>,
+    pub progress: Vec<BranchProgress>,
+    /// Index of the branch currently being processed by the background thread.
+    pub current_index: usize,
+    /// Display name of the repo currently being processed.
+    pub current_repo: String,
     pub done: bool,
     pub error: Option<String>,
     pub scroll: u16,
@@ -129,7 +144,10 @@ impl GitToolsState {
             mode: None,
             input: String::new(),
             branches: Vec::new(),
+            protected_branches: Vec::new(),
             progress: Vec::new(),
+            current_index: 0,
+            current_repo: String::new(),
             done: false,
             error: None,
             scroll: 0,
@@ -152,7 +170,10 @@ impl GitToolsState {
         self.mode = None;
         self.input.clear();
         self.branches.clear();
+        self.protected_branches.clear();
         self.progress.clear();
+        self.current_index = 0;
+        self.current_repo.clear();
         self.done = false;
         self.error = None;
         self.scroll = 0;
@@ -585,7 +606,27 @@ impl AppState {
 
     pub fn git_tools_confirm_delete(&mut self) {
         if !self.git_tools.branches.is_empty() {
-            self.git_tools.progress.clear();
+            let multi_repo = self.git_tools.selected_repos.len() > 1;
+            self.git_tools.progress = self
+                .git_tools
+                .branches
+                .iter()
+                .map(|b| {
+                    let name = if multi_repo {
+                        format!("[{}] {}", b.repo_display_name(), b.name)
+                    } else {
+                        b.name.clone()
+                    };
+                    BranchProgress {
+                        name,
+                        local_ok: None,
+                        remote_ok: None,
+                        processed: false,
+                    }
+                })
+                .collect();
+            self.git_tools.current_index = 0;
+            self.git_tools.current_repo.clear();
             self.git_tools.done = false;
             self.git_tools.scroll = 0;
             self.active_screen = Screen::GitToolsProgress;

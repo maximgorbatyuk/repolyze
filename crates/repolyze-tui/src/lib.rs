@@ -44,14 +44,19 @@ struct AnalysisCompletion {
 }
 
 enum BranchListResult {
-    Ok(Vec<branches::BranchInfo>),
+    Ok {
+        branches: Vec<branches::BranchInfo>,
+        /// Protected branches found in selected repos: (repo_display_name, branch_name).
+        protected: Vec<(String, String)>,
+    },
     Err(String),
 }
 
 /// Per-branch deletion progress sent from the background thread.
 struct BranchDeleteProgress {
-    name: String,
-    success: bool,
+    repo_display: String,
+    local_ok: Option<bool>,
+    remote_ok: Option<bool>,
     done: bool, // true on the final message
 }
 
@@ -146,8 +151,10 @@ pub fn run(initial_repos: Option<Vec<String>>, settings: &Settings) -> anyhow::R
                         let (tx, rx) = mpsc::channel();
                         std::thread::spawn(move || {
                             let mut all_branches = Vec::new();
+                            let mut all_protected = Vec::new();
                             let mut errors = Vec::new();
                             for repo in &repos {
+                                collect_protected(&mut all_protected, repo);
                                 match branches::list_merged_branches(repo, &base_branch) {
                                     Ok(list) => all_branches.extend(list),
                                     Err(e) => errors.push(e.to_string()),
@@ -156,7 +163,11 @@ pub fn run(initial_repos: Option<Vec<String>>, settings: &Settings) -> anyhow::R
                             if all_branches.is_empty() && !errors.is_empty() {
                                 tx.send(BranchListResult::Err(errors.join("; "))).ok();
                             } else {
-                                tx.send(BranchListResult::Ok(all_branches)).ok();
+                                tx.send(BranchListResult::Ok {
+                                    branches: all_branches,
+                                    protected: all_protected,
+                                })
+                                .ok();
                             }
                         });
                         branch_list_rx = Some(rx);
@@ -172,8 +183,10 @@ pub fn run(initial_repos: Option<Vec<String>>, settings: &Settings) -> anyhow::R
                         let (tx, rx) = mpsc::channel();
                         std::thread::spawn(move || {
                             let mut all_branches = Vec::new();
+                            let mut all_protected = Vec::new();
                             let mut errors = Vec::new();
                             for repo in &repos {
+                                collect_protected(&mut all_protected, repo);
                                 match branches::list_stale_branches(repo, days) {
                                     Ok(list) => all_branches.extend(list),
                                     Err(e) => errors.push(e.to_string()),
@@ -182,7 +195,11 @@ pub fn run(initial_repos: Option<Vec<String>>, settings: &Settings) -> anyhow::R
                             if all_branches.is_empty() && !errors.is_empty() {
                                 tx.send(BranchListResult::Err(errors.join("; "))).ok();
                             } else {
-                                tx.send(BranchListResult::Ok(all_branches)).ok();
+                                tx.send(BranchListResult::Ok {
+                                    branches: all_branches,
+                                    protected: all_protected,
+                                })
+                                .ok();
                             }
                         });
                         branch_list_rx = Some(rx);
@@ -190,23 +207,16 @@ pub fn run(initial_repos: Option<Vec<String>>, settings: &Settings) -> anyhow::R
                 }
                 AppAction::DeleteBranches => {
                     let branch_list = app.git_tools.branches.clone();
-                    let multi_repo = app.git_tools.selected_repos.len() > 1;
                     let force = app.git_tools.mode == Some(GitToolsMode::StaleBranches);
                     let (tx, rx) = mpsc::channel();
                     std::thread::spawn(move || {
                         let total = branch_list.len();
                         for (i, branch) in branch_list.iter().enumerate() {
                             let result = branches::delete_branch(branch, force);
-                            let display_name = if multi_repo {
-                                format!("[{}] {}", branch.repo_display_name(), result.branch)
-                            } else {
-                                result.branch
-                            };
-                            let success =
-                                result.local_ok.unwrap_or(true) && result.remote_ok.unwrap_or(true);
                             tx.send(BranchDeleteProgress {
-                                name: display_name,
-                                success,
+                                repo_display: branch.repo_display_name(),
+                                local_ok: result.local_ok,
+                                remote_ok: result.remote_ok,
                                 done: i + 1 == total,
                             })
                             .ok();
@@ -240,8 +250,12 @@ pub fn run(initial_repos: Option<Vec<String>>, settings: &Settings) -> anyhow::R
                 Ok(result) => {
                     app.is_loading = false;
                     match result {
-                        BranchListResult::Ok(list) => {
+                        BranchListResult::Ok {
+                            branches: list,
+                            protected,
+                        } => {
                             app.git_tools.branches = list;
+                            app.git_tools.protected_branches = protected;
                             app.active_screen = app::Screen::GitToolsBranchList;
                         }
                         BranchListResult::Err(msg) => {
@@ -271,9 +285,15 @@ pub fn run(initial_repos: Option<Vec<String>>, settings: &Settings) -> anyhow::R
                     match rx.try_recv() {
                         Ok(progress) => {
                             let is_done = progress.done;
-                            app.git_tools
-                                .progress
-                                .push((progress.name, progress.success));
+                            let idx = app.git_tools.current_index;
+                            if idx < app.git_tools.progress.len() {
+                                app.git_tools.progress[idx].local_ok = progress.local_ok;
+                                app.git_tools.progress[idx].remote_ok = progress.remote_ok;
+                                app.git_tools.progress[idx].processed = true;
+                            }
+                            app.git_tools.current_repo = progress.repo_display;
+                            app.git_tools.current_index = idx + 1;
+                            auto_scroll_to_current(&mut app);
                             if is_done {
                                 app.git_tools.done = true;
                                 branch_delete_rx = None;
@@ -506,8 +526,10 @@ where
                 app.git_tools.error = Some("No repositories selected".to_string());
             } else {
                 let mut all_branches = Vec::new();
+                let mut all_protected = Vec::new();
                 let mut errors = Vec::new();
                 for repo in repos {
+                    collect_protected(&mut all_protected, repo);
                     match branches::list_merged_branches(repo, &base_branch) {
                         Ok(list) => all_branches.extend(list),
                         Err(e) => errors.push(e.to_string()),
@@ -517,6 +539,7 @@ where
                     app.git_tools.error = Some(errors.join("; "));
                 } else {
                     app.git_tools.branches = all_branches;
+                    app.git_tools.protected_branches = all_protected;
                     app.active_screen = app::Screen::GitToolsBranchList;
                 }
             }
@@ -527,8 +550,10 @@ where
                 app.git_tools.error = Some("No repositories selected".to_string());
             } else {
                 let mut all_branches = Vec::new();
+                let mut all_protected = Vec::new();
                 let mut errors = Vec::new();
                 for repo in repos {
+                    collect_protected(&mut all_protected, repo);
                     match branches::list_stale_branches(repo, days) {
                         Ok(list) => all_branches.extend(list),
                         Err(e) => errors.push(e.to_string()),
@@ -538,28 +563,71 @@ where
                     app.git_tools.error = Some(errors.join("; "));
                 } else {
                     app.git_tools.branches = all_branches;
+                    app.git_tools.protected_branches = all_protected;
                     app.active_screen = app::Screen::GitToolsBranchList;
                 }
             }
         }
         AppAction::DeleteBranches => {
-            let multi_repo = app.git_tools.selected_repos.len() > 1;
+            // In the TUI path, confirm_delete pre-populates progress. The sync
+            // path (used by tests) may skip that, so ensure progress is filled.
+            if app.git_tools.progress.len() != app.git_tools.branches.len() {
+                app.git_tools_confirm_delete();
+                // confirm_delete sets pending_action again; clear it so we don't
+                // re-enter this handler.
+                app.pending_action = None;
+            }
             let force = app.git_tools.mode == Some(GitToolsMode::StaleBranches);
-            for branch in &app.git_tools.branches {
+            for (i, branch) in app.git_tools.branches.clone().iter().enumerate() {
                 let result = branches::delete_branch(branch, force);
-                let display_name = if multi_repo {
-                    format!("[{}] {}", branch.repo_display_name(), result.branch)
-                } else {
-                    result.branch
-                };
-                let success = result.local_ok.unwrap_or(true) && result.remote_ok.unwrap_or(true);
-                app.git_tools.progress.push((display_name, success));
+                app.git_tools.progress[i].local_ok = result.local_ok;
+                app.git_tools.progress[i].remote_ok = result.remote_ok;
+                app.git_tools.progress[i].processed = true;
+                app.git_tools.current_repo = branch.repo_display_name();
+                app.git_tools.current_index = i + 1;
             }
             app.git_tools.done = true;
         }
     }
 
     Ok(())
+}
+
+/// Auto-scroll the progress view so the next-to-process item stays visible.
+///
+/// Called from the drain loop right after incrementing `current_index`, so the
+/// index already points one past the just-completed branch. This is intentional:
+/// we want the *upcoming* item in view, not the one that just finished.
+///
+/// Header line count (5) assumes the "in-progress" layout: title, blank,
+/// counter, spinner/"Now processing", blank. This function is only called while
+/// `done` is false, so the layout is stable.
+fn auto_scroll_to_current(app: &mut AppState) {
+    debug_assert!(
+        !app.git_tools.done,
+        "auto_scroll_to_current should only be called while deletion is in progress"
+    );
+    // title + blank + counter + spinner/"Now processing" + blank = 5 lines
+    let header_lines: u16 = 5;
+    let current_line = header_lines + app.git_tools.current_index as u16;
+    let footer_lines: u16 = 3;
+    let visible = app.visible_height.saturating_sub(footer_lines);
+    if visible > 0 && current_line >= app.git_tools.scroll + visible {
+        app.git_tools.scroll = current_line - visible + 1;
+    }
+}
+
+/// Collect protected branches that exist in `repo` into `out`.
+fn collect_protected(out: &mut Vec<(String, String)>, repo: &std::path::Path) {
+    if let Ok(protected) = branches::list_protected_branches(repo) {
+        let display = repo
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| repo.to_string_lossy().to_string());
+        for name in protected {
+            out.push((display.clone(), name));
+        }
+    }
 }
 
 fn render_user_effort_for_selected(app: &mut AppState, settings: &Settings) {

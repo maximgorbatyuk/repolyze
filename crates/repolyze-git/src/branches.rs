@@ -49,8 +49,32 @@ pub struct DeleteResult {
     pub error: Option<String>,
 }
 
-fn is_protected(name: &str) -> bool {
+pub fn is_protected(name: &str) -> bool {
     PROTECTED_BRANCHES.contains(&name)
+}
+
+/// Returns the names of protected branches that actually exist (locally or on
+/// the "origin" remote) in `repo`.
+pub fn list_protected_branches(repo: &Path) -> Result<Vec<String>, RepolyzeError> {
+    let local_output = run_git(repo, &["branch", "--format=%(refname:short)"])?;
+    let local_names: Vec<&str> = local_output.lines().map(|l| l.trim()).collect();
+
+    let remote_prefix = format!("{REMOTE_NAME}/");
+    let remote_output =
+        run_git(repo, &["branch", "-r", "--format=%(refname:short)"]).unwrap_or_default();
+    let remote_names: Vec<String> = remote_output
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter_map(|name| name.strip_prefix(&remote_prefix).map(|s| s.to_string()))
+        .collect();
+
+    let mut found = Vec::new();
+    for &protected in PROTECTED_BRANCHES {
+        if local_names.contains(&protected) || remote_names.iter().any(|r| r == protected) {
+            found.push(protected.to_string());
+        }
+    }
+    Ok(found)
 }
 
 fn current_branch(repo: &Path) -> Result<String, RepolyzeError> {
@@ -475,6 +499,30 @@ mod tests {
             "command failed: {} — {}",
             args.join(" "),
             String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn list_protected_branches_finds_existing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        run_cmd(root, &["git", "init", "-b", "main"]);
+        run_cmd(root, &["git", "config", "user.name", "Test"]);
+        run_cmd(root, &["git", "config", "user.email", "test@test.com"]);
+        std::fs::write(root.join("README.md"), "# Test\n").unwrap();
+        run_cmd(root, &["git", "add", "."]);
+        run_cmd(root, &["git", "commit", "-m", "initial"]);
+
+        // Create a second protected branch
+        run_cmd(root, &["git", "branch", "dev"]);
+
+        let protected = list_protected_branches(root).unwrap();
+        assert!(protected.contains(&"main".to_string()), "should find main");
+        assert!(protected.contains(&"dev".to_string()), "should find dev");
+        assert!(
+            !protected.contains(&"production".to_string()),
+            "should not find non-existent protected branch"
         );
     }
 
