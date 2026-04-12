@@ -12,6 +12,7 @@ use ratatui::{
     },
 };
 
+use repolyze_core::chart_util::{fit_bar_dimensions, format_value_fit};
 use repolyze_core::model::{BarChartData, HeatmapData, TimelineData};
 use repolyze_report::table::{HEATMAP_DESC, HEATMAP_TITLE};
 
@@ -433,12 +434,9 @@ fn vertical_bar_lines(data: &BarChartData, max_width: u16) -> Vec<Line<'static>>
         ];
     }
 
-    let n = data.bars.len();
-    if n == 0 {
-        return vec![];
-    }
-
-    let (col_width, gap, display_labels) = fit_bar_dimensions(&data.bars, max_width);
+    // Reserve 1 char for the leading padding space emitted on every row below.
+    let chart_area = max_width.saturating_sub(1) as usize;
+    let (col_width, gap, display_labels) = fit_bar_dimensions(&data.bars, chart_area);
 
     let chart_height: usize = 8;
     let mut lines = Vec::new();
@@ -489,90 +487,6 @@ fn vertical_bar_lines(data: &BarChartData, max_width: u16) -> Vec<Line<'static>>
     lines.push(Line::from(label_spans));
 
     lines
-}
-
-/// Compute (col_width, gap, labels) that fits `n` bars into `max_width` chars.
-/// Prefers preserving labels; if they overflow, strips ":00" suffix, then shrinks col_width, then drops the gap.
-// Assumes ASCII labels (weekday names and "HH:00" hour strings). Byte length and
-// `chars().take()` would undercount column width for non-ASCII (CJK/emoji) labels.
-fn fit_bar_dimensions(bars: &[(String, u64)], max_width: u16) -> (usize, usize, Vec<String>) {
-    let n = bars.len();
-    let available = max_width.saturating_sub(1) as usize;
-    let mut labels: Vec<String> = bars.iter().map(|(l, _)| l.clone()).collect();
-    let value_width = bars
-        .iter()
-        .map(|(_, v)| v.to_string().len())
-        .max()
-        .unwrap_or(1);
-
-    let fits = |labels: &[String], gap: usize| -> Option<usize> {
-        let lw = labels.iter().map(|l| l.len()).max().unwrap_or(1);
-        let desired = lw.max(value_width).max(3);
-        let gaps = n.saturating_sub(1) * gap;
-        if n * desired + gaps <= available {
-            Some(desired)
-        } else {
-            None
-        }
-    };
-
-    let mut gap = 1usize;
-    if let Some(cw) = fits(&labels, gap) {
-        return (cw, gap, labels);
-    }
-
-    // Try stripping ":00" suffix (hour labels)
-    if labels.iter().all(|l| l.ends_with(":00") && l.len() > 3) {
-        labels = labels
-            .iter()
-            .map(|l| l[..l.len() - 3].to_string())
-            .collect();
-        if let Some(cw) = fits(&labels, gap) {
-            return (cw, gap, labels);
-        }
-    }
-
-    // Shrink col_width (below label_width → labels will be truncated)
-    let gaps = n.saturating_sub(1) * gap;
-    let mut col_width = available.saturating_sub(gaps) / n.max(1);
-    if col_width == 0 {
-        gap = 0;
-        col_width = (available / n.max(1)).max(1);
-    }
-
-    let display: Vec<String> = labels
-        .iter()
-        .map(|l| l.chars().take(col_width).collect::<String>())
-        .collect();
-    (col_width, gap, display)
-}
-
-/// Format a bar value so it fits within `col_width` chars.
-/// Uses SI suffixes (k, M, G) when the raw number would overflow; falls back to
-/// a truncated form ending in `+` if even the abbreviated form is too wide.
-fn format_value_fit(value: u64, col_width: usize) -> String {
-    let raw = value.to_string();
-    if raw.len() <= col_width || col_width == 0 {
-        return raw;
-    }
-    let (scaled, suffix) = if value >= 1_000_000_000 {
-        (value / 1_000_000_000, 'G')
-    } else if value >= 1_000_000 {
-        (value / 1_000_000, 'M')
-    } else if value >= 1_000 {
-        (value / 1_000, 'k')
-    } else {
-        return raw.chars().take(col_width).collect();
-    };
-    let candidate = format!("{scaled}{suffix}");
-    if candidate.len() <= col_width {
-        candidate
-    } else if col_width >= 2 {
-        let head: String = candidate.chars().take(col_width - 1).collect();
-        format!("{head}+")
-    } else {
-        "+".to_string()
-    }
 }
 
 fn text_bar_chart_lines(data: &BarChartData, max_width: u16) -> Vec<Line<'static>> {

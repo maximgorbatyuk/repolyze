@@ -3,7 +3,7 @@
 Repolyze release script.
 
 Release flow:
-  1. Parse and validate version argument (X.Y.Z, all non-negative integers)
+  1. Resolve version: explicit arg or auto-bump patch from Cargo.toml
   2. Check prerequisites: gh CLI installed and authenticated
   3. Commit any pending changes on the current branch
      (message: "release: commit all changes before release X.Y.Z")
@@ -19,7 +19,8 @@ Release flow:
   13. Print success summary
 
 Usage:
-  ./scripts/release.py 0.2.0
+  ./scripts/release.py          # auto-bumps patch (e.g. 0.1.12 → 0.1.13)
+  ./scripts/release.py 0.2.0   # explicit version
 """
 
 import re
@@ -51,13 +52,6 @@ def validate_version(version: str) -> None:
     if not re.match(pattern, version):
         print(f"ERROR: invalid version '{version}'. Expected format: X.Y.Z (e.g. 0.2.0)")
         sys.exit(1)
-
-    parts = version.split(".")
-    for part in parts:
-        n = int(part)
-        if n < 0:
-            print(f"ERROR: version parts must be non-negative, got '{part}'")
-            sys.exit(1)
 
     print(f"  Version: {version}")
 
@@ -129,7 +123,11 @@ def update_version(version: str) -> None:
 
 
 def commit_and_push_version(version: str) -> None:
-    """Commit the version bump and push to dev."""
+    """Commit the version bump and push to dev.
+
+    Note: this push also carries any pre-release commit made by commit_pending_changes()
+    in step 3, since git push sends all local commits not yet on the remote.
+    """
     print(f"\n--- Committing version bump ---")
     run(["git", "add", "Cargo.toml", "Cargo.lock"])
     run(["git", "commit", "-m", f"chore: bump version to {version}"])
@@ -152,15 +150,45 @@ def create_and_push_tag(version: str) -> None:
     run(["git", "push", "origin", tag])
 
 
+def read_current_version() -> str:
+    """Read the workspace version from Cargo.toml."""
+    content = CARGO_TOML.read_text()
+    match = re.search(r'^version\s*=\s*"([^"]+)"', content, re.MULTILINE)
+    if not match:
+        print("ERROR: could not find version field in Cargo.toml")
+        sys.exit(1)
+    return match.group(1)
+
+
+def bump_patch(current: str) -> str:
+    """Increment the patch segment of a X.Y.Z version string."""
+    parts = current.split(".")
+    if len(parts) != 3 or not all(p.isdecimal() for p in parts):
+        print(f"ERROR: cannot auto-bump malformed version '{current}'")
+        sys.exit(1)
+    major, minor, patch = parts
+    return f"{major}.{minor}.{int(patch) + 1}"
+
+
 def main() -> None:
-    if len(sys.argv) != 2:
-        print("Usage: ./scripts/release.py <version>")
-        print("Example: ./scripts/release.py 0.2.0")
+    if len(sys.argv) > 2:
+        print("Usage: ./scripts/release.py [version]")
+        print("  With no arg: auto-bumps the patch version of workspace Cargo.toml.")
+        print("  Example:    ./scripts/release.py")
+        print("              ./scripts/release.py 0.2.0")
         sys.exit(1)
 
-    version = sys.argv[1]
+    if len(sys.argv) == 2:
+        version = sys.argv[1]
+        auto_bumped = False
+    else:
+        current = read_current_version()
+        version = bump_patch(current)
+        auto_bumped = True
 
     print("=== Repolyze Release ===\n")
+    if auto_bumped:
+        print(f"Auto-selected version: {version} (bumped from {current})\n")
 
     # Step 1: Validate version
     print("Step 1: Validate version")
