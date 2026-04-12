@@ -2,7 +2,9 @@ use std::fmt;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use repolyze_core::model::{ComparisonReport, HeatmapData, PartialFailure};
+use repolyze_core::model::{
+    BarChartData, ComparisonReport, HeatmapData, PartialFailure, TimelineData,
+};
 use repolyze_git::branches::BranchInfo;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,15 +28,21 @@ pub enum AnalyzeView {
     Contribution,
     Activity,
     ActivityHeatmap,
+    WeekdayChart,
+    HourlyChart,
+    TimelineChart,
     UserEffort,
     CompareRepos,
 }
 
-pub const ANALYZE_MENU_ITEMS: [(&str, AnalyzeView); 6] = [
+pub const ANALYZE_MENU_ITEMS: [(&str, AnalyzeView); 9] = [
     ("Full report", AnalyzeView::All),
     ("Contribution", AnalyzeView::Contribution),
     ("Most active days and hours", AnalyzeView::Activity),
     ("Activity heatmap", AnalyzeView::ActivityHeatmap),
+    ("Commits by weekday", AnalyzeView::WeekdayChart),
+    ("Commits by hour", AnalyzeView::HourlyChart),
+    ("Commit timeline", AnalyzeView::TimelineChart),
     ("User effort", AnalyzeView::UserEffort),
     ("Compare repositories", AnalyzeView::CompareRepos),
 ];
@@ -313,6 +321,9 @@ pub struct AppState {
     pub contributor_selected: usize,
     pub selected_email: Option<String>,
     pub analysis_elapsed: Duration,
+    pub weekday_chart: Option<BarChartData>,
+    pub hourly_chart: Option<BarChartData>,
+    pub timeline_data: Option<TimelineData>,
     pub git_tools: GitToolsState,
 }
 
@@ -357,6 +368,9 @@ impl AppState {
             contributor_selected: 0,
             selected_email: None,
             analysis_elapsed: Duration::ZERO,
+            weekday_chart: None,
+            hourly_chart: None,
+            timeline_data: None,
             git_tools: GitToolsState::new(),
         }
     }
@@ -398,6 +412,9 @@ impl AppState {
         self.input_buffer.clear();
         self.input_paths.clear();
         self.heatmap_data = None;
+        self.weekday_chart = None;
+        self.hourly_chart = None;
+        self.timeline_data = None;
         self.metadata_text = None;
         self.workspace_info = None;
         self.is_loading = false;
@@ -419,6 +436,9 @@ impl AppState {
         if !self.input_paths.is_empty() {
             self.analysis_table = None;
             self.heatmap_data = None;
+            self.weekday_chart = None;
+            self.hourly_chart = None;
+            self.timeline_data = None;
             self.pending_action = Some(AppAction::StartAnalyze {
                 paths: self.input_paths.clone(),
                 view: self.selected_analyze_view.clone(),
@@ -432,6 +452,9 @@ impl AppState {
             self.analysis_result = None;
             self.analysis_table = None;
             self.heatmap_data = None;
+            self.weekday_chart = None;
+            self.hourly_chart = None;
+            self.timeline_data = None;
             self.scroll_offset = 0;
             self.input_paths.clear();
             self.input_buffer.clear();

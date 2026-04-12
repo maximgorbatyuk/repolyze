@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.12] - 2026-04-12
+
+### Fixed
+
+- **"Commits by Hour" value row overflow**: In the TUI Full Report and Markdown output, hours with 3+ digit commit counts caused trailing digits to spill past the last `23` label because column widths were sized by label length only. `fit_bar_dimensions` now factors the widest value's digit count into the column width, and a new `format_value_fit` helper falls back to SI abbreviations (`1k`, `12M`) or `+`-truncation when the chart would otherwise exceed the terminal/page width.
+
+### Improved
+
+- **Commit Timeline chart is 3× taller**: The "Commit Timeline (last 3 months)" sparkline in the TUI Full Report and Markdown output now renders as 3 stacked rows (24 sub-levels total) instead of a single row, making week-to-week variation much easier to read. Zero-activity weeks render as blank cells instead of the minimum `▁` block, so low-activity periods are visually distinct from high-activity ones. The standalone Commit Timeline view (full-screen ratatui Chart) is unchanged.
+
 ## [0.1.11] - 2026-04-10
 
 ### Improved

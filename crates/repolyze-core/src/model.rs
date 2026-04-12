@@ -249,6 +249,20 @@ impl HeatmapData {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct BarChartData {
+    pub title: String,
+    pub bars: Vec<(String, u64)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TimelineData {
+    pub title: String,
+    pub points: Vec<(String, u32)>,
+    pub start_date: String,
+    pub end_date: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

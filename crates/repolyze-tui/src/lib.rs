@@ -15,11 +15,12 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use repolyze_core::analytics::{
-    build_contribution_rows, build_heatmap_data, build_repo_comparison, build_user_activity_rows,
-    build_user_effort_data,
+    build_contribution_rows, build_heatmap_data, build_hourly_chart_data, build_repo_comparison,
+    build_timeline_data, build_user_activity_rows, build_user_effort_data,
+    build_weekday_chart_data,
 };
 use repolyze_core::input::{resolve_inputs_with_failures, resolve_single_input};
-use repolyze_core::model::{ComparisonReport, HeatmapData};
+use repolyze_core::model::{BarChartData, ComparisonReport, HeatmapData, TimelineData};
 use repolyze_core::service::analyze_targets_with_store;
 use repolyze_core::settings::Settings;
 use repolyze_git::backend::GitCliBackend;
@@ -38,6 +39,9 @@ struct AnalysisCompletion {
     report: ComparisonReport,
     table_text: String,
     heatmap_data: Option<HeatmapData>,
+    weekday_chart: Option<BarChartData>,
+    hourly_chart: Option<BarChartData>,
+    timeline_data: Option<TimelineData>,
     failure_count: usize,
     error_message: Option<String>,
     elapsed: Duration,
@@ -359,6 +363,9 @@ where
                 },
                 table_text: String::new(),
                 heatmap_data: None,
+                weekday_chart: None,
+                hourly_chart: None,
+                timeline_data: None,
                 failure_count: 0,
                 error_message: Some(format!("Analysis failed: failed to open database: {error}")),
                 elapsed: Duration::ZERO,
@@ -382,26 +389,48 @@ where
         .unwrap_or_else(|_| ".".to_string());
     let header = render_analysis_header(&report.repositories, elapsed, &cwd);
     let today = repolyze_core::date_util::today_ymd();
-    let (table_body, heatmap_data) = match view {
+    let mut heatmap_data = None;
+    let mut weekday_chart = None;
+    let mut hourly_chart = None;
+    let mut timeline_data = None;
+
+    let table_body = match view {
         AnalyzeView::Contribution => {
             let rows = build_contribution_rows(&report.repositories, settings);
-            (render_contribution_table(&rows), None)
+            render_contribution_table(&rows)
         }
         AnalyzeView::Activity => {
             let rows = build_user_activity_rows(&report.repositories, settings);
-            (render_user_activity_table(&rows), None)
+            render_user_activity_table(&rows)
         }
         AnalyzeView::ActivityHeatmap => {
-            let hm = build_heatmap_data(&report.repositories, None, &today, settings);
-            (String::new(), Some(hm))
+            heatmap_data = Some(build_heatmap_data(
+                &report.repositories,
+                None,
+                &today,
+                settings,
+            ));
+            String::new()
+        }
+        AnalyzeView::WeekdayChart => {
+            weekday_chart = Some(build_weekday_chart_data(&report.repositories));
+            String::new()
+        }
+        AnalyzeView::HourlyChart => {
+            hourly_chart = Some(build_hourly_chart_data(&report.repositories));
+            String::new()
+        }
+        AnalyzeView::TimelineChart => {
+            timeline_data = Some(build_timeline_data(&report.repositories));
+            String::new()
         }
         AnalyzeView::UserEffort => {
             // UserEffort needs contributor selection first; table built later
-            (String::new(), None)
+            String::new()
         }
         AnalyzeView::CompareRepos => {
             let comparison = build_repo_comparison(&report.repositories);
-            (render_repo_comparison_table(&comparison), None)
+            render_repo_comparison_table(&comparison)
         }
         AnalyzeView::All => {
             let contrib_rows = build_contribution_rows(&report.repositories, settings);
@@ -419,8 +448,16 @@ where
                     combined.push_str(&table);
                 }
             }
-            let hm = build_heatmap_data(&report.repositories, None, &today, settings);
-            (combined, Some(hm))
+            heatmap_data = Some(build_heatmap_data(
+                &report.repositories,
+                None,
+                &today,
+                settings,
+            ));
+            weekday_chart = Some(build_weekday_chart_data(&report.repositories));
+            hourly_chart = Some(build_hourly_chart_data(&report.repositories));
+            timeline_data = Some(build_timeline_data(&report.repositories));
+            combined
         }
     };
 
@@ -428,6 +465,9 @@ where
         report,
         table_text: format!("{header}{table_body}"),
         heatmap_data,
+        weekday_chart,
+        hourly_chart,
+        timeline_data,
         failure_count,
         error_message: None,
         elapsed,
@@ -451,6 +491,9 @@ fn apply_analysis_completion(
 
     app.analysis_table = Some(completion.table_text);
     app.heatmap_data = completion.heatmap_data;
+    app.weekday_chart = completion.weekday_chart;
+    app.hourly_chart = completion.hourly_chart;
+    app.timeline_data = completion.timeline_data;
     app.set_result(completion.report);
     if completion.failure_count > 0 {
         app.status_message = format!(

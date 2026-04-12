@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::date_util;
 use crate::model::{
-    ContributionRow, DAYS_IN_WEEK, HEATMAP_MAX_WEEKS, HeatmapData, RepositoryAnalysis,
-    UserActivityRow, UserEffortData,
+    BarChartData, ContributionRow, DAYS_IN_WEEK, HEATMAP_MAX_WEEKS, HeatmapData,
+    RepositoryAnalysis, TimelineData, UserActivityRow, UserEffortData,
 };
 use crate::settings::Settings;
 
@@ -499,6 +499,64 @@ pub fn build_heatmap_data(
     }
 }
 
+pub fn build_weekday_chart_data(repos: &[RepositoryAnalysis]) -> BarChartData {
+    let mut totals = [0u64; 7];
+    for repo in repos {
+        for (d, &count) in repo.activity.by_weekday.iter().enumerate() {
+            totals[d] += count as u64;
+        }
+    }
+    BarChartData {
+        title: "Commits by Weekday".to_string(),
+        bars: WEEKDAY_NAMES
+            .iter()
+            .zip(totals.iter())
+            .map(|(name, &val)| (name.to_string(), val))
+            .collect(),
+    }
+}
+
+pub fn build_hourly_chart_data(repos: &[RepositoryAnalysis]) -> BarChartData {
+    let mut totals = [0u64; 24];
+    for repo in repos {
+        for (h, &count) in repo.activity.by_hour.iter().enumerate() {
+            totals[h] += count as u64;
+        }
+    }
+    BarChartData {
+        title: "Commits by Hour".to_string(),
+        bars: totals
+            .iter()
+            .enumerate()
+            .map(|(h, &val)| (format!("{h:02}:00"), val))
+            .collect(),
+    }
+}
+
+pub fn build_timeline_data(repos: &[RepositoryAnalysis]) -> TimelineData {
+    let cutoff = date_util::add_days(&date_util::today_ymd(), -90);
+    let mut aggregated: BTreeMap<String, u32> = BTreeMap::new();
+    for repo in repos {
+        for act in &repo.contributions.activity_by_contributor {
+            for (date, count) in &act.commits_by_date {
+                if date.as_str() >= cutoff.as_str() {
+                    let entry = aggregated.entry(date.clone()).or_insert(0);
+                    *entry = entry.saturating_add(*count);
+                }
+            }
+        }
+    }
+    let start_date = aggregated.keys().next().cloned().unwrap_or_default();
+    let end_date = aggregated.keys().next_back().cloned().unwrap_or_default();
+    let points: Vec<(String, u32)> = aggregated.into_iter().collect();
+    TimelineData {
+        title: "Commit Timeline (last 3 months)".to_string(),
+        points,
+        start_date,
+        end_date,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -909,5 +967,92 @@ mod tests {
     fn build_user_effort_data_unknown_email() {
         let repos = make_report_with_shared_contributor();
         assert!(build_user_effort_data(&repos, "nobody@example.com", &no_settings()).is_none());
+    }
+
+    #[test]
+    fn build_weekday_chart_data_aggregates_across_repos() {
+        let mut repo_a = make_repo("a", vec![], vec![], 0);
+        repo_a.activity.by_weekday[0] = 5; // Monday
+        repo_a.activity.by_weekday[4] = 3; // Friday
+        let mut repo_b = make_repo("b", vec![], vec![], 0);
+        repo_b.activity.by_weekday[0] = 2; // Monday
+        repo_b.activity.by_weekday[6] = 1; // Sunday
+
+        let chart = build_weekday_chart_data(&[repo_a, repo_b]);
+        assert_eq!(chart.bars.len(), 7);
+        assert_eq!(chart.bars[0], ("Monday".to_string(), 7));
+        assert_eq!(chart.bars[4], ("Friday".to_string(), 3));
+        assert_eq!(chart.bars[6], ("Sunday".to_string(), 1));
+        assert_eq!(chart.bars[1].1, 0); // Tuesday
+    }
+
+    #[test]
+    fn build_hourly_chart_data_aggregates_across_repos() {
+        let mut repo_a = make_repo("a", vec![], vec![], 0);
+        repo_a.activity.by_hour[10] = 4;
+        let mut repo_b = make_repo("b", vec![], vec![], 0);
+        repo_b.activity.by_hour[10] = 6;
+        repo_b.activity.by_hour[15] = 2;
+
+        let chart = build_hourly_chart_data(&[repo_a, repo_b]);
+        assert_eq!(chart.bars.len(), 24);
+        assert_eq!(chart.bars[10], ("10:00".to_string(), 10));
+        assert_eq!(chart.bars[15], ("15:00".to_string(), 2));
+        assert_eq!(chart.bars[0].1, 0);
+    }
+
+    #[test]
+    fn build_timeline_data_merges_across_repos() {
+        // Use recent dates so they fall within the 90-day window
+        let today = date_util::today_ymd();
+        let d1 = date_util::add_days(&today, -10);
+        let d2 = date_util::add_days(&today, -9);
+        let d3 = date_util::add_days(&today, -8);
+
+        let mut weekday = [0u32; 7];
+        weekday[0] = 2;
+        let hour = [0u32; 24];
+
+        let repo_a = make_repo(
+            "repo-a",
+            vec![make_contributor("alice@example.com", 2, 20, 5, 2)],
+            vec![make_activity(
+                "alice@example.com",
+                weekday,
+                hour,
+                &[&d1, &d2],
+            )],
+            2,
+        );
+        let repo_b = make_repo(
+            "repo-b",
+            vec![make_contributor("alice@example.com", 1, 10, 2, 1)],
+            vec![make_activity(
+                "alice@example.com",
+                weekday,
+                hour,
+                &[&d1, &d3],
+            )],
+            1,
+        );
+
+        let timeline = build_timeline_data(&[repo_a, repo_b]);
+
+        // d1 appears in both repos → count 2
+        // d2 in repo_a only → count 1
+        // d3 in repo_b only → count 1
+        assert_eq!(timeline.points.len(), 3);
+        assert_eq!(timeline.start_date, d1);
+        assert_eq!(timeline.end_date, d3);
+        let merged = timeline.points.iter().find(|(d, _)| *d == d1).unwrap();
+        assert_eq!(merged.1, 2);
+    }
+
+    #[test]
+    fn build_timeline_data_empty_repos() {
+        let timeline = build_timeline_data(&[]);
+        assert!(timeline.points.is_empty());
+        assert!(timeline.start_date.is_empty());
+        assert!(timeline.end_date.is_empty());
     }
 }

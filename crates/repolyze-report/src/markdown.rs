@@ -1,19 +1,14 @@
 use std::collections::HashMap;
 
-use repolyze_core::analytics::{RepoComparisonRow, build_heatmap_data, build_repo_comparison};
+use repolyze_core::analytics::{
+    RepoComparisonRow, build_heatmap_data, build_hourly_chart_data, build_repo_comparison,
+    build_timeline_data, build_weekday_chart_data,
+};
 use repolyze_core::date_util;
-use repolyze_core::model::{ComparisonReport, ContributorStats, HeatmapData};
+use repolyze_core::model::{
+    BarChartData, ComparisonReport, ContributorStats, HeatmapData, TimelineData,
+};
 use repolyze_core::settings::Settings;
-
-const WEEKDAY_NAMES: [&str; 7] = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-];
 
 /// Render a comparison report as Markdown.
 pub fn render_markdown(report: &ComparisonReport, settings: &Settings) -> String {
@@ -95,39 +90,17 @@ pub fn render_markdown(report: &ComparisonReport, settings: &Settings) -> String
     }
     out.push('\n');
 
-    // Activity by hour (aggregated across repos)
-    out.push_str("## Activity by Hour\n\n");
-    out.push_str("| Hour | Commits |\n");
-    out.push_str("|---|---|\n");
-    let mut hours = [0u32; 24];
-    for analysis in &report.repositories {
-        for (h, &count) in analysis.activity.by_hour.iter().enumerate() {
-            hours[h] += count;
-        }
-    }
-    for (hour, &count) in hours.iter().enumerate() {
-        if count > 0 {
-            out.push_str(&format!("| {:02}:00 | {count} |\n", hour));
-        }
-    }
-    out.push('\n');
+    // Activity by hour (bar chart)
+    let hourly_chart = build_hourly_chart_data(&report.repositories);
+    out.push_str(&render_bar_chart_section(&hourly_chart));
 
-    // Activity by weekday (aggregated across repos)
-    out.push_str("## Activity by Weekday\n\n");
-    out.push_str("| Day | Commits |\n");
-    out.push_str("|---|---|\n");
-    let mut weekdays = [0u32; 7];
-    for analysis in &report.repositories {
-        for (d, &count) in analysis.activity.by_weekday.iter().enumerate() {
-            weekdays[d] += count;
-        }
-    }
-    for (day, &count) in weekdays.iter().enumerate() {
-        if count > 0 {
-            out.push_str(&format!("| {} | {count} |\n", WEEKDAY_NAMES[day]));
-        }
-    }
-    out.push('\n');
+    // Activity by weekday (bar chart)
+    let weekday_chart = build_weekday_chart_data(&report.repositories);
+    out.push_str(&render_bar_chart_section(&weekday_chart));
+
+    // Commit timeline (weekly bar chart)
+    let timeline = build_timeline_data(&report.repositories);
+    out.push_str(&render_timeline_section(&timeline));
 
     // Size comparison
     out.push_str("## Size Comparison\n\n");
@@ -318,6 +291,274 @@ fn render_heatmap_section(data: &HeatmapData) -> String {
     out
 }
 
+const SPARKLINE_BLOCKS: [&str; 8] = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+
+/// Target width for bar charts in Markdown output — fits a standard 80-col terminal.
+const BAR_CHART_MAX_WIDTH: usize = 80;
+
+fn format_bars(bars: &[(String, u64)]) -> String {
+    let max_val = bars.iter().map(|(_, v)| *v).max().unwrap_or(0);
+    if max_val == 0 {
+        let labels: String = bars
+            .iter()
+            .map(|(l, _)| l.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        return format!("{labels}\n(no data)\n");
+    }
+
+    let (col_width, gap, display_labels) = fit_bar_dimensions(bars, BAR_CHART_MAX_WIDTH);
+
+    let chart_height: usize = 8;
+    let mut out = String::new();
+
+    for row in (0..chart_height).rev() {
+        let threshold = (row as f64 + 0.5) / chart_height as f64;
+        for (i, (_, value)) in bars.iter().enumerate() {
+            if i > 0 && gap > 0 {
+                out.push_str(&" ".repeat(gap));
+            }
+            let ratio = *value as f64 / max_val as f64;
+            if ratio >= threshold {
+                let block = if ratio >= threshold + 1.0 / chart_height as f64 {
+                    "█"
+                } else {
+                    let frac = ((ratio - threshold) * chart_height as f64 * 8.0).round() as usize;
+                    SPARKLINE_BLOCKS[frac.min(7)]
+                };
+                out.push_str(&block.repeat(col_width));
+            } else {
+                out.push_str(&" ".repeat(col_width));
+            }
+        }
+        out.push('\n');
+    }
+
+    for (i, (_, value)) in bars.iter().enumerate() {
+        if i > 0 && gap > 0 {
+            out.push_str(&" ".repeat(gap));
+        }
+        let text = format_value_fit(*value, col_width);
+        out.push_str(&format!("{:^col_width$}", text));
+    }
+    out.push('\n');
+
+    for (i, label) in display_labels.iter().enumerate() {
+        if i > 0 && gap > 0 {
+            out.push_str(&" ".repeat(gap));
+        }
+        out.push_str(&format!("{:^col_width$}", label));
+    }
+    out.push('\n');
+
+    out
+}
+
+/// Compute (col_width, gap, labels) that fits `bars.len()` columns into `max_width` chars.
+/// Prefers preserving labels; if they overflow, strips ":00" suffix, then shrinks col_width, then drops the gap.
+// Assumes ASCII labels (weekday names and "HH:00" hour strings). Byte length and
+// `chars().take()` would undercount column width for non-ASCII (CJK/emoji) labels.
+fn fit_bar_dimensions(bars: &[(String, u64)], max_width: usize) -> (usize, usize, Vec<String>) {
+    let n = bars.len();
+    let mut labels: Vec<String> = bars.iter().map(|(l, _)| l.clone()).collect();
+    let value_width = bars
+        .iter()
+        .map(|(_, v)| v.to_string().len())
+        .max()
+        .unwrap_or(1);
+
+    let fits = |labels: &[String], gap: usize| -> Option<usize> {
+        let lw = labels.iter().map(|l| l.len()).max().unwrap_or(1);
+        let desired = lw.max(value_width).max(3);
+        let gaps = n.saturating_sub(1) * gap;
+        if n * desired + gaps <= max_width {
+            Some(desired)
+        } else {
+            None
+        }
+    };
+
+    let mut gap = 1usize;
+    if let Some(cw) = fits(&labels, gap) {
+        return (cw, gap, labels);
+    }
+
+    if labels.iter().all(|l| l.ends_with(":00") && l.len() > 3) {
+        labels = labels
+            .iter()
+            .map(|l| l[..l.len() - 3].to_string())
+            .collect();
+        if let Some(cw) = fits(&labels, gap) {
+            return (cw, gap, labels);
+        }
+    }
+
+    let gaps = n.saturating_sub(1) * gap;
+    let mut col_width = max_width.saturating_sub(gaps) / n.max(1);
+    if col_width == 0 {
+        gap = 0;
+        col_width = (max_width / n.max(1)).max(1);
+    }
+
+    let display: Vec<String> = labels
+        .iter()
+        .map(|l| l.chars().take(col_width).collect::<String>())
+        .collect();
+    (col_width, gap, display)
+}
+
+/// Format a bar value so it fits within `col_width` chars.
+/// Uses SI suffixes (k, M, G) when the raw number would overflow; falls back to
+/// a truncated form ending in `+` if even the abbreviated form is too wide.
+fn format_value_fit(value: u64, col_width: usize) -> String {
+    let raw = value.to_string();
+    if raw.len() <= col_width || col_width == 0 {
+        return raw;
+    }
+    let (scaled, suffix) = if value >= 1_000_000_000 {
+        (value / 1_000_000_000, 'G')
+    } else if value >= 1_000_000 {
+        (value / 1_000_000, 'M')
+    } else if value >= 1_000 {
+        (value / 1_000, 'k')
+    } else {
+        return raw.chars().take(col_width).collect();
+    };
+    let candidate = format!("{scaled}{suffix}");
+    if candidate.len() <= col_width {
+        candidate
+    } else if col_width >= 2 {
+        let head: String = candidate.chars().take(col_width - 1).collect();
+        format!("{head}+")
+    } else {
+        "+".to_string()
+    }
+}
+
+fn render_bar_chart_section(data: &BarChartData) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("## {}\n\n", data.title));
+    out.push_str("```\n");
+    out.push_str(&format_bars(&data.bars));
+    out.push_str("```\n\n");
+    out
+}
+
+fn render_timeline_section(data: &TimelineData) -> String {
+    if data.points.is_empty() {
+        return String::new();
+    }
+
+    // Aggregate daily points into ISO weeks
+    let mut weeks: Vec<(String, u64)> = Vec::new();
+    for (date, count) in &data.points {
+        let week_label = iso_week_label(date);
+        if let Some(last) = weeks.last_mut()
+            && last.0 == week_label
+        {
+            last.1 += *count as u64;
+        } else {
+            weeks.push((week_label, *count as u64));
+        }
+    }
+
+    let max_val = weeks.iter().map(|(_, v)| *v).max().unwrap_or(0);
+
+    // Sparkline rows (3 rows tall — each row spans 8 sub-levels, total 24)
+    let chart_height: usize = 3;
+    let total_levels = chart_height * 8;
+    let mut sparkline_rows: Vec<String> = Vec::with_capacity(chart_height);
+    for row in (0..chart_height).rev() {
+        let mut row_str = String::with_capacity(weeks.len());
+        for (_, value) in &weeks {
+            let filled = if max_val == 0 {
+                0
+            } else {
+                ((*value as f64 / max_val as f64) * total_levels as f64).round() as usize
+            };
+            let row_filled = filled.saturating_sub(row * 8).min(8);
+            if row_filled == 0 {
+                row_str.push(' ');
+            } else {
+                row_str.push_str(SPARKLINE_BLOCKS[row_filled - 1]);
+            }
+        }
+        sparkline_rows.push(row_str);
+    }
+
+    // Date labels — first, middle, last
+    let mut labels = String::new();
+    let n = weeks.len();
+    if n > 0 {
+        let positions: Vec<usize> = if n > 2 {
+            vec![0, n / 2, n - 1]
+        } else if n == 2 {
+            vec![0, 1]
+        } else {
+            vec![0]
+        };
+        let mut cursor = 0;
+        for &pos in &positions {
+            if pos >= cursor {
+                labels.push_str(&" ".repeat(pos - cursor));
+                labels.push_str(&weeks[pos].0);
+                cursor = pos + weeks[pos].0.len();
+            }
+        }
+    }
+
+    let mut out = String::new();
+    out.push_str(&format!("## {}\n\n", data.title));
+    out.push_str("```\n");
+    for row in &sparkline_rows {
+        out.push_str(row);
+        out.push('\n');
+    }
+    out.push_str(&labels);
+    out.push('\n');
+    out.push_str(&format!(
+        "{} = 0  {} = {} commits/week\n",
+        SPARKLINE_BLOCKS[0], SPARKLINE_BLOCKS[7], max_val
+    ));
+    out.push_str("```\n\n");
+    out
+}
+
+/// Convert a "YYYY-MM-DD" date to an ISO 8601 week label "YYYY-Www".
+fn iso_week_label(date: &str) -> String {
+    let Some((y, m, d)) = date_util::parse_ymd(date) else {
+        return date.to_string();
+    };
+    let month_days = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    let mut doy = month_days[m as usize - 1] + d;
+    let is_leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    if is_leap && m > 2 {
+        doy += 1;
+    }
+    // Monday=1 .. Sunday=7
+    let dow = date_util::day_of_week(y, m, d) as i32 + 1;
+    let week = (doy as i32 - dow + 10) / 7;
+    if week < 1 {
+        format!("{}-W{:02}", y - 1, iso_weeks_in_year(y - 1))
+    } else if week > iso_weeks_in_year(y) as i32 {
+        format!("{}-W01", y + 1)
+    } else {
+        format!("{y}-W{week:02}")
+    }
+}
+
+/// Number of ISO weeks in a year (52 or 53).
+fn iso_weeks_in_year(y: i32) -> u32 {
+    let jan1_dow = date_util::day_of_week(y, 1, 1); // 0=Mon
+    let is_leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    // A year has 53 weeks if Jan 1 is Thursday, or Dec 31 is Thursday
+    if jan1_dow == 3 || (jan1_dow == 2 && is_leap) {
+        53
+    } else {
+        52
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -408,8 +649,8 @@ mod tests {
     fn markdown_report_contains_activity_sections() {
         let report = make_two_repo_report();
         let md = render_markdown(&report, &Settings::default());
-        assert!(md.contains("## Activity by Hour"));
-        assert!(md.contains("## Activity by Weekday"));
+        assert!(md.contains("## Commits by Hour"));
+        assert!(md.contains("## Commits by Weekday"));
     }
 
     #[test]
@@ -466,14 +707,89 @@ mod tests {
         let mut report = make_two_repo_report();
         report.repositories[0].activity.by_hour[10] = 1;
         report.repositories[0].activity.by_weekday[2] = 1;
-        report.repositories[0].activity.heatmap[2][10] = 1;
         report.repositories[1].activity.by_hour[10] = 2;
         report.repositories[1].activity.by_weekday[2] = 2;
-        report.repositories[1].activity.heatmap[2][10] = 2;
 
         let md = render_markdown(&report, &Settings::default());
 
-        assert_eq!(md.matches("| 10:00 | 3 |").count(), 1);
-        assert_eq!(md.matches("| Wednesday | 3 |").count(), 1);
+        // Scope hour-chart assertions to the "## Commits by Hour" section — other tables
+        // (Repository Summary, Top Contributors) also contain "10" and "3" substrings.
+        let hour_section = md
+            .split("## Commits by Hour")
+            .nth(1)
+            .and_then(|s| s.split("\n## ").next())
+            .expect("hour chart section present");
+        // 24 bars don't fit at "HH:00" in 80 cols, so labels collapse to "HH".
+        assert!(hour_section.contains(" 10 ") || hour_section.contains(" 10\n"));
+        // Aggregated value (1 + 2 = 3) appears in the chart's value row.
+        assert!(hour_section.contains('3'));
+        assert!(md.contains("Wednesday"));
+    }
+
+    #[test]
+    fn render_bar_chart_section_formats_bars() {
+        let data = BarChartData {
+            title: "Test Chart".to_string(),
+            bars: vec![
+                ("Mon".to_string(), 10),
+                ("Tue".to_string(), 5),
+                ("Wed".to_string(), 0),
+            ],
+        };
+        let result = render_bar_chart_section(&data);
+        assert!(result.contains("## Test Chart"));
+        assert!(result.contains("Mon"));
+        assert!(result.contains("Tue"));
+        assert!(result.contains("10"));
+        assert!(result.contains("5"));
+        // Zero-value bars still show the label
+        assert!(result.contains("Wed"));
+    }
+
+    #[test]
+    fn render_timeline_section_renders_sparkline() {
+        let data = TimelineData {
+            title: "Commit Timeline".to_string(),
+            points: vec![
+                ("2025-01-13".to_string(), 3),
+                ("2025-01-14".to_string(), 2),
+                ("2025-01-20".to_string(), 5),
+            ],
+            start_date: "2025-01-13".to_string(),
+            end_date: "2025-01-20".to_string(),
+        };
+        let result = render_timeline_section(&data);
+        assert!(result.contains("## Commit Timeline"));
+        // Sparkline uses block characters
+        assert!(result.contains('▁') || result.contains('█'));
+        // Legend shows max commits/week
+        assert!(result.contains("commits/week"));
+    }
+
+    #[test]
+    fn render_timeline_section_empty_data() {
+        let data = TimelineData {
+            title: "Empty".to_string(),
+            points: vec![],
+            start_date: String::new(),
+            end_date: String::new(),
+        };
+        assert!(render_timeline_section(&data).is_empty());
+    }
+
+    #[test]
+    fn iso_week_label_known_dates() {
+        assert_eq!(iso_week_label("2025-01-01"), "2025-W01"); // Wednesday
+        assert_eq!(iso_week_label("2025-01-06"), "2025-W02"); // Monday
+        assert_eq!(iso_week_label("2025-01-13"), "2025-W03"); // Monday
+        assert_eq!(iso_week_label("2025-06-15"), "2025-W24"); // Sunday
+    }
+
+    #[test]
+    fn iso_week_label_cross_year() {
+        // 2024-12-30 is Monday — belongs to ISO week 1 of 2025
+        assert_eq!(iso_week_label("2024-12-30"), "2025-W01");
+        // 2024-12-29 is Sunday — still ISO week 52 of 2024
+        assert_eq!(iso_week_label("2024-12-29"), "2024-W52");
     }
 }

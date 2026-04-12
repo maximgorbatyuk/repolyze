@@ -5,7 +5,8 @@ Repolyze release script.
 Release flow:
   1. Parse and validate version argument (X.Y.Z, all non-negative integers)
   2. Check prerequisites: gh CLI installed and authenticated
-  3. Check clean git working tree (no uncommitted changes)
+  3. Commit any pending changes on the current branch
+     (message: "release: commit all changes before release X.Y.Z")
   4. Run cargo xtask verify (fmt, clippy, test, build)
   5. Switch to 'dev' branch, pull latest
   6. Update version in workspace Cargo.toml
@@ -14,7 +15,8 @@ Release flow:
   9. Switch to 'main' branch, pull latest
   10. Merge dev into main, push main
   11. Create and push tag vX.Y.Z
-  12. Print success summary
+  12. Switch back to 'dev' branch
+  13. Print success summary
 
 Usage:
   ./scripts/release.py 0.2.0
@@ -78,14 +80,15 @@ def check_gh_cli() -> None:
     print("  gh CLI: installed and authenticated")
 
 
-def check_clean_worktree() -> None:
-    """Abort if there are uncommitted changes."""
+def commit_pending_changes(version: str) -> None:
+    """If there are uncommitted changes, stage and commit them on the current branch."""
     result = run(["git", "status", "--porcelain"], check=False)
-    if result.stdout.strip():
-        print("ERROR: working tree is not clean. Commit or stash changes first.")
-        print(result.stdout.strip())
-        sys.exit(1)
-    print("  Working tree: clean")
+    if not result.stdout.strip():
+        print("  Working tree: clean, nothing to commit")
+        return
+    print("  Working tree has pending changes — committing them.")
+    run(["git", "add", "-A"])
+    run(["git", "commit", "-m", f"release: commit all changes before release {version}"])
 
 
 def run_verify() -> None:
@@ -167,9 +170,9 @@ def main() -> None:
     print("\nStep 2: Check prerequisites")
     check_gh_cli()
 
-    # Step 3: Check clean working tree
-    print("\nStep 3: Check clean working tree")
-    check_clean_worktree()
+    # Step 3: Commit any pending changes on the current branch
+    print("\nStep 3: Commit pending changes")
+    commit_pending_changes(version)
 
     # Step 4: Run verification
     print("\nStep 4: Run verification")
@@ -195,10 +198,15 @@ def main() -> None:
     print("\nStep 9: Create and push tag")
     create_and_push_tag(version)
 
-    # Step 10: Done
+    # Step 10: Switch back to dev so the user ends on the working branch
+    print("\nStep 10: Switch back to dev")
+    switch_branch("dev")
+
+    # Step 11: Done
     tag = f"v{version}"
     print(f"\n=== Release {tag} complete ===")
     print(f"  Tag: {tag}")
+    print(f"  Current branch: dev")
     print(f"  GitHub Actions will build release artifacts via cargo-dist.")
     print(f"  Monitor: gh run list --workflow release.yml")
 

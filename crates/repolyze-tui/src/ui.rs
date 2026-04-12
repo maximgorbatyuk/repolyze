@@ -2,13 +2,17 @@ use std::path::Path;
 
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    symbols::Marker,
     text::{Line, Span},
-    widgets::{Paragraph, Wrap},
+    widgets::{
+        Axis, Bar, BarChart as RatatuiBarChart, BarGroup, Block, Borders, Chart, Dataset,
+        GraphType, Paragraph, Wrap,
+    },
 };
 
-use repolyze_core::model::HeatmapData;
+use repolyze_core::model::{BarChartData, HeatmapData, TimelineData};
 use repolyze_report::table::{HEATMAP_DESC, HEATMAP_TITLE};
 
 use crate::app::{
@@ -255,11 +259,46 @@ fn draw_analyze_menu(frame: &mut Frame, app: &AppState, area: Rect) {
 }
 
 fn draw_analyze(frame: &mut Frame, app: &mut AppState, area: Rect) {
+    if app.is_loading {
+        draw_analyze_text(frame, app, area);
+        return;
+    }
+
+    match &app.selected_analyze_view {
+        AnalyzeView::WeekdayChart => {
+            if let Some(data) = &app.weekday_chart {
+                draw_bar_chart(frame, data, area);
+            } else {
+                draw_analyze_text(frame, app, area);
+            }
+        }
+        AnalyzeView::HourlyChart => {
+            if let Some(data) = &app.hourly_chart {
+                draw_bar_chart(frame, data, area);
+            } else {
+                draw_analyze_text(frame, app, area);
+            }
+        }
+        AnalyzeView::TimelineChart => {
+            if let Some(data) = &app.timeline_data {
+                draw_timeline_chart(frame, data, area);
+            } else {
+                draw_analyze_text(frame, app, area);
+            }
+        }
+        _ => draw_analyze_text(frame, app, area),
+    }
+}
+
+fn draw_analyze_text(frame: &mut Frame, app: &mut AppState, area: Rect) {
     let view_label = match &app.selected_analyze_view {
         AnalyzeView::All => "All",
         AnalyzeView::Contribution => "Contribution",
         AnalyzeView::Activity => "Most active days and hours",
         AnalyzeView::ActivityHeatmap => "Activity heatmap",
+        AnalyzeView::WeekdayChart => "Commits by weekday",
+        AnalyzeView::HourlyChart => "Commits by hour",
+        AnalyzeView::TimelineChart => "Commit timeline",
         AnalyzeView::UserEffort => "User effort",
         AnalyzeView::CompareRepos => "Compare repositories",
     };
@@ -304,6 +343,28 @@ fn draw_analyze(frame: &mut Frame, app: &mut AppState, area: Rect) {
             lines.push(Line::from(format!(" {HEATMAP_DESC}")));
             lines.push(Line::from(""));
             lines.extend(heatmap_lines(data));
+        }
+
+        // Append text-based charts in All view
+        if app.selected_analyze_view == AnalyzeView::All {
+            if let Some(data) = &app.weekday_chart {
+                lines.push(Line::from(""));
+                lines.push(Line::from(format!(" #5 {}", data.title)));
+                lines.push(Line::from(""));
+                lines.extend(text_bar_chart_lines(data, area.width));
+            }
+            if let Some(data) = &app.hourly_chart {
+                lines.push(Line::from(""));
+                lines.push(Line::from(format!(" #6 {}", data.title)));
+                lines.push(Line::from(""));
+                lines.extend(text_bar_chart_lines(data, area.width));
+            }
+            if let Some(data) = &app.timeline_data {
+                lines.push(Line::from(""));
+                lines.push(Line::from(format!(" #7 {}", data.title)));
+                lines.push(Line::from(""));
+                lines.extend(text_timeline_lines(data, area.width));
+            }
         }
     } else if let Some(report) = &app.analysis_result {
         // All view with summary
@@ -350,6 +411,404 @@ fn draw_analyze(frame: &mut Frame, app: &mut AppState, area: Rect) {
 
     let paragraph = Paragraph::new(lines).scroll((app.scroll_offset, 0));
     frame.render_widget(paragraph, area);
+}
+
+const SPARKLINE_BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
+fn vertical_bar_lines(data: &BarChartData, max_width: u16) -> Vec<Line<'static>> {
+    let max_val = data.bars.iter().map(|(_, v)| *v).max().unwrap_or(0);
+    if max_val == 0 {
+        let labels: String = data
+            .bars
+            .iter()
+            .map(|(l, _)| l.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        return vec![
+            Line::from(Span::raw(format!(" {labels}"))),
+            Line::from(Span::styled(
+                " (no data)",
+                Style::default().fg(Color::DarkGray),
+            )),
+        ];
+    }
+
+    let n = data.bars.len();
+    if n == 0 {
+        return vec![];
+    }
+
+    let (col_width, gap, display_labels) = fit_bar_dimensions(&data.bars, max_width);
+
+    let chart_height: usize = 8;
+    let mut lines = Vec::new();
+    for row in (0..chart_height).rev() {
+        let threshold = (row as f64 + 0.5) / chart_height as f64;
+        let mut spans: Vec<Span<'static>> = vec![Span::raw(" ")];
+        for (i, (_, value)) in data.bars.iter().enumerate() {
+            if i > 0 && gap > 0 {
+                spans.push(Span::raw(" ".repeat(gap)));
+            }
+            let ratio = *value as f64 / max_val as f64;
+            if ratio >= threshold {
+                let block = if ratio >= threshold + 1.0 / chart_height as f64 {
+                    "\u{2588}"
+                } else {
+                    let frac = ((ratio - threshold) * chart_height as f64 * 8.0).round() as usize;
+                    ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"][frac.min(7)]
+                };
+                let bar_str = block.repeat(col_width);
+                spans.push(Span::styled(bar_str, Style::default().fg(Color::Cyan)));
+            } else {
+                spans.push(Span::raw(" ".repeat(col_width)));
+            }
+        }
+        lines.push(Line::from(spans));
+    }
+
+    let mut val_spans: Vec<Span<'static>> = vec![Span::raw(" ")];
+    for (i, (_, value)) in data.bars.iter().enumerate() {
+        if i > 0 && gap > 0 {
+            val_spans.push(Span::raw(" ".repeat(gap)));
+        }
+        let text = format_value_fit(*value, col_width);
+        val_spans.push(Span::styled(
+            format!("{:^col_width$}", text),
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
+    lines.push(Line::from(val_spans));
+
+    let mut label_spans: Vec<Span<'static>> = vec![Span::raw(" ")];
+    for (i, label) in display_labels.iter().enumerate() {
+        if i > 0 && gap > 0 {
+            label_spans.push(Span::raw(" ".repeat(gap)));
+        }
+        label_spans.push(Span::raw(format!("{:^col_width$}", label)));
+    }
+    lines.push(Line::from(label_spans));
+
+    lines
+}
+
+/// Compute (col_width, gap, labels) that fits `n` bars into `max_width` chars.
+/// Prefers preserving labels; if they overflow, strips ":00" suffix, then shrinks col_width, then drops the gap.
+// Assumes ASCII labels (weekday names and "HH:00" hour strings). Byte length and
+// `chars().take()` would undercount column width for non-ASCII (CJK/emoji) labels.
+fn fit_bar_dimensions(bars: &[(String, u64)], max_width: u16) -> (usize, usize, Vec<String>) {
+    let n = bars.len();
+    let available = max_width.saturating_sub(1) as usize;
+    let mut labels: Vec<String> = bars.iter().map(|(l, _)| l.clone()).collect();
+    let value_width = bars
+        .iter()
+        .map(|(_, v)| v.to_string().len())
+        .max()
+        .unwrap_or(1);
+
+    let fits = |labels: &[String], gap: usize| -> Option<usize> {
+        let lw = labels.iter().map(|l| l.len()).max().unwrap_or(1);
+        let desired = lw.max(value_width).max(3);
+        let gaps = n.saturating_sub(1) * gap;
+        if n * desired + gaps <= available {
+            Some(desired)
+        } else {
+            None
+        }
+    };
+
+    let mut gap = 1usize;
+    if let Some(cw) = fits(&labels, gap) {
+        return (cw, gap, labels);
+    }
+
+    // Try stripping ":00" suffix (hour labels)
+    if labels.iter().all(|l| l.ends_with(":00") && l.len() > 3) {
+        labels = labels
+            .iter()
+            .map(|l| l[..l.len() - 3].to_string())
+            .collect();
+        if let Some(cw) = fits(&labels, gap) {
+            return (cw, gap, labels);
+        }
+    }
+
+    // Shrink col_width (below label_width → labels will be truncated)
+    let gaps = n.saturating_sub(1) * gap;
+    let mut col_width = available.saturating_sub(gaps) / n.max(1);
+    if col_width == 0 {
+        gap = 0;
+        col_width = (available / n.max(1)).max(1);
+    }
+
+    let display: Vec<String> = labels
+        .iter()
+        .map(|l| l.chars().take(col_width).collect::<String>())
+        .collect();
+    (col_width, gap, display)
+}
+
+/// Format a bar value so it fits within `col_width` chars.
+/// Uses SI suffixes (k, M, G) when the raw number would overflow; falls back to
+/// a truncated form ending in `+` if even the abbreviated form is too wide.
+fn format_value_fit(value: u64, col_width: usize) -> String {
+    let raw = value.to_string();
+    if raw.len() <= col_width || col_width == 0 {
+        return raw;
+    }
+    let (scaled, suffix) = if value >= 1_000_000_000 {
+        (value / 1_000_000_000, 'G')
+    } else if value >= 1_000_000 {
+        (value / 1_000_000, 'M')
+    } else if value >= 1_000 {
+        (value / 1_000, 'k')
+    } else {
+        return raw.chars().take(col_width).collect();
+    };
+    let candidate = format!("{scaled}{suffix}");
+    if candidate.len() <= col_width {
+        candidate
+    } else if col_width >= 2 {
+        let head: String = candidate.chars().take(col_width - 1).collect();
+        format!("{head}+")
+    } else {
+        "+".to_string()
+    }
+}
+
+fn text_bar_chart_lines(data: &BarChartData, max_width: u16) -> Vec<Line<'static>> {
+    vertical_bar_lines(data, max_width)
+}
+
+fn text_timeline_lines(data: &TimelineData, width: u16) -> Vec<Line<'static>> {
+    if data.points.is_empty() {
+        return vec![Line::from(" No commit data available.")];
+    }
+
+    let available = width.saturating_sub(2) as usize; // 1 padding each side
+    let weeks = aggregate_weekly(&data.points);
+    let max_val = weeks.iter().map(|(_, v)| *v).max().unwrap_or(0);
+
+    // Resample to fill available width
+    let n = weeks.len();
+    let cols = available.max(1);
+    let mut sampled: Vec<u32> = Vec::with_capacity(cols);
+    for c in 0..cols {
+        let src_idx = c * n / cols;
+        sampled.push(weeks.get(src_idx).map(|(_, v)| *v).unwrap_or(0));
+    }
+
+    // Sparkline rows (3 rows tall — each row spans 8 sub-levels, total 24)
+    let chart_height: usize = 3;
+    let total_levels = chart_height * 8;
+    let mut lines: Vec<Line<'static>> = Vec::with_capacity(chart_height + 2);
+    for row in (0..chart_height).rev() {
+        let mut spans: Vec<Span<'static>> = vec![Span::raw(" ")];
+        for value in &sampled {
+            let filled = if max_val == 0 {
+                0
+            } else {
+                ((*value as f64 / max_val as f64) * total_levels as f64).round() as usize
+            };
+            let row_filled = filled.saturating_sub(row * 8).min(8);
+            let ch: char = if row_filled == 0 {
+                ' '
+            } else {
+                SPARKLINE_BLOCKS[row_filled - 1]
+            };
+            spans.push(Span::styled(
+                ch.to_string(),
+                Style::default().fg(Color::Cyan),
+            ));
+        }
+        lines.push(Line::from(spans));
+    }
+
+    // Date labels below — first, middle, last
+    if !weeks.is_empty() {
+        let mut label_line = " ".to_string();
+        let positions: Vec<usize> = if cols > 2 {
+            vec![0, cols / 2, cols - 1]
+        } else {
+            vec![0]
+        };
+        let mut cursor = 0;
+        for &pos in &positions {
+            let src_idx = (pos * n / cols).min(n.saturating_sub(1));
+            let label = &weeks[src_idx].0;
+            if pos >= cursor {
+                label_line.push_str(&" ".repeat(pos - cursor));
+                label_line.push_str(label);
+                cursor = pos + label.len();
+            }
+        }
+        lines.push(Line::from(Span::styled(
+            label_line,
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    lines.push(Line::from(Span::styled(
+        format!(
+            " {} = 0  {} = {max_val} commits/week",
+            SPARKLINE_BLOCKS[0], SPARKLINE_BLOCKS[7]
+        ),
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    lines
+}
+
+fn aggregate_weekly(points: &[(String, u32)]) -> Vec<(String, u32)> {
+    let mut weeks: Vec<(String, u32)> = Vec::new();
+    let mut day_count = 0u32;
+
+    for (date, count) in points {
+        if day_count >= 7 || weeks.is_empty() {
+            weeks.push((date.clone(), *count));
+            day_count = 1;
+        } else {
+            if let Some(last) = weeks.last_mut() {
+                last.1 = last.1.saturating_add(*count);
+            }
+            day_count += 1;
+        }
+    }
+    weeks
+}
+
+fn draw_bar_chart(frame: &mut Frame, data: &BarChartData, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(1)])
+        .split(area);
+
+    let n = data.bars.len() as u16;
+    // Available width inside borders (2 for left+right border)
+    let inner_width = chunks[0].width.saturating_sub(2);
+    // Calculate bar_width to fit all bars: n * bar_width + (n-1) * gap <= inner_width
+    let (bar_width, bar_gap) = if n == 0 {
+        (1, 1)
+    } else {
+        let gaps = n.saturating_sub(1);
+        // Try gap=1 first, then gap=0 if bars still don't fit
+        let w_with_gap = inner_width.saturating_sub(gaps) / n;
+        if w_with_gap >= 2 {
+            (w_with_gap, 1)
+        } else {
+            (inner_width / n, 0)
+        }
+    };
+
+    let bars: Vec<Bar> = data
+        .bars
+        .iter()
+        .map(|(label, val)| {
+            Bar::default()
+                .value(*val)
+                .label(Line::from(label.clone()))
+                .style(Style::default().fg(Color::Cyan))
+        })
+        .collect();
+
+    let chart = RatatuiBarChart::default()
+        .block(
+            Block::default()
+                .title(format!(" {} ", data.title))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        )
+        .data(BarGroup::default().bars(&bars))
+        .bar_width(bar_width.max(1))
+        .bar_gap(bar_gap)
+        .bar_style(Style::default().fg(Color::Cyan))
+        .value_style(Style::default().fg(Color::White));
+
+    frame.render_widget(chart, chunks[0]);
+    frame.render_widget(
+        Paragraph::new(hints_line(&[("Esc", "Home"), ("Q", "Quit")])),
+        chunks[1],
+    );
+}
+
+fn draw_timeline_chart(frame: &mut Frame, data: &TimelineData, area: Rect) {
+    if data.points.is_empty() {
+        let empty = Paragraph::new(Line::from(" No commit data available.")).block(
+            Block::default()
+                .title(format!(" {} ", data.title))
+                .borders(Borders::ALL),
+        );
+        frame.render_widget(empty, area);
+        return;
+    }
+
+    let chart_area = area;
+
+    let data_points: Vec<(f64, f64)> = data
+        .points
+        .iter()
+        .enumerate()
+        .map(|(i, (_, count))| (i as f64, *count as f64))
+        .collect();
+
+    let y_max = data
+        .points
+        .iter()
+        .map(|(_, c)| *c as f64)
+        .fold(0.0f64, f64::max);
+    let x_max = if data_points.len() <= 1 {
+        1.0
+    } else {
+        (data_points.len() - 1) as f64
+    };
+
+    // Select ~6 evenly-spaced date labels for the X-axis
+    let num_labels = 6.min(data.points.len());
+    let x_labels: Vec<Span> = if num_labels > 1 {
+        (0..num_labels)
+            .map(|i| {
+                let idx = i * (data.points.len() - 1) / (num_labels - 1);
+                let date = &data.points[idx].0;
+                Span::raw(date.clone())
+            })
+            .collect()
+    } else {
+        vec![Span::raw(data.start_date.clone())]
+    };
+
+    let dataset = Dataset::default()
+        .name("Commits")
+        .marker(Marker::Braille)
+        .graph_type(GraphType::Line)
+        .style(Style::default().fg(Color::Cyan))
+        .data(&data_points);
+
+    let chart = Chart::new(vec![dataset])
+        .block(
+            Block::default()
+                .title(format!(" {} ", data.title))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        )
+        .x_axis(
+            Axis::default()
+                .title("Date")
+                .style(Style::default().fg(Color::DarkGray))
+                .bounds([0.0, x_max])
+                .labels(x_labels),
+        )
+        .y_axis(
+            Axis::default()
+                .title("Commits")
+                .style(Style::default().fg(Color::DarkGray))
+                .bounds([0.0, y_max.max(1.0)])
+                .labels(vec![
+                    Span::raw("0"),
+                    Span::raw(format!("{}", (y_max / 2.0).ceil() as u32)),
+                    Span::raw(format!("{}", y_max.ceil() as u32)),
+                ]),
+        );
+
+    frame.render_widget(chart, chart_area);
 }
 
 fn heatmap_color(count: u32, max: u32) -> Color {
