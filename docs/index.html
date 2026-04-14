@@ -417,6 +417,164 @@ Fri  <span style="color:#0cc">&#x25a0;</span> <span style="color:#555">&#x25a0;<
       </div>
     </section>
 
+    <!-- Charts in your report -->
+    <section>
+      <div class="container">
+        <h2 class="section-title">Charts in your report</h2>
+        <p class="section-subtitle">Every tag, bar, and sparkline below is real output from <code>repolyze analyze</code>. No fonts, no images &mdash; pure terminal text.</p>
+        <div class="usage-examples">
+
+          <div>
+            <p class="usage-label">Weekday commit distribution (bar chart)</p>
+            <div class="terminal-window animate-on-scroll">
+              <div class="terminal-header" aria-hidden="true">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="terminal-title">Commits by weekday</span>
+              </div>
+              <div class="terminal-body">
+<pre>## Commits by weekday
+
+                              &#x2585;&#x2585;&#x2585;&#x2585;&#x2585;&#x2585;&#x2585;&#x2585;
+&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;            &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2583;&#x2583;&#x2583;&#x2583;&#x2583;&#x2583;&#x2583;&#x2583;
+&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2581;&#x2581;&#x2581;&#x2581;&#x2581;&#x2581;&#x2581;&#x2581;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;
+&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;
+&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2584;&#x2584;&#x2584;&#x2584;&#x2584;&#x2584;&#x2584;&#x2584;
+&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;
+&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;
+&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;
+   48        36        52        44        25         3         1
+   Mon       Tue       Wed       Thu       Fri       Sat       Sun</pre>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p class="usage-label">Hourly commit distribution (24-hour bar chart)</p>
+            <div class="terminal-window animate-on-scroll">
+              <div class="terminal-header" aria-hidden="true">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="terminal-title">Commits by hour</span>
+              </div>
+              <div class="terminal-body">
+<pre>## Commits by hour
+
+                                  &#x2588;&#x2588;      &#x2588;&#x2588;
+                              &#x2588;&#x2588;  &#x2588;&#x2588;      &#x2588;&#x2588;  &#x2588;&#x2588;
+                              &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;
+                          &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;
+                      &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;
+                      &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;
+                  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;
+      &#x2588;&#x2588;          &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;  &#x2588;&#x2588;
+  0   1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23</pre>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p class="usage-label">Commit timeline (weekly sparkline)</p>
+            <div class="terminal-window animate-on-scroll">
+              <div class="terminal-header" aria-hidden="true">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="terminal-title">Commit timeline</span>
+              </div>
+              <div class="terminal-body">
+<pre>## Commit Timeline
+
+ &#x2582;&#x2585; &#x2587;&#x2588;&#x2582; &#x2585;&#x2586;&#x2588; &#x2583;&#x2587;&#x2585; &#x2582;&#x2586;&#x2588;&#x2583; &#x2585;&#x2586;&#x2588; &#x2585;&#x2583; &#x2582;&#x2587;
+ &#x2581;&#x2583; &#x2585;&#x2586;&#x2581; &#x2583;&#x2584;&#x2587; &#x2582;&#x2585;&#x2583; &#x2581;&#x2584;&#x2586;&#x2582; &#x2583;&#x2584;&#x2586; &#x2583;&#x2582; &#x2581;&#x2585;
+ &#x2581;&#x2582; &#x2583;&#x2584;&#x2581; &#x2582;&#x2582;&#x2585; &#x2581;&#x2583;&#x2582; &#x2581;&#x2582;&#x2584;&#x2581; &#x2582;&#x2582;&#x2584; &#x2582;&#x2581; &#x2581;&#x2583;
+ 2025-W12             2025-W28             2025-W44
+ &#x2581; = 0   &#x2588; = 28 commits/week</pre>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p class="usage-label">User effort deep-dive</p>
+            <div class="terminal-window animate-on-scroll">
+              <div class="terminal-header" aria-hidden="true">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="terminal-title">~/projects/my-app</span>
+              </div>
+              <div class="terminal-body">
+<pre><span class="prompt">$</span> repolyze analyze user-effort <span class="flag">--email</span> alice@example.com <span class="flag">--format</span> table
+Period:    2025-03-01 .. 2026-03-15
+Projects:  1 repository
+Folder:    /Users/dev/projects/my-app
+Mode:      Single repository
+Elapsed:   0.031s
+
+Per-contributor deep-dive: cadence, averages, and top file extensions.
+
+User:   alice@example.com (Alice Nguyen)
+
+Metric                         Value
+-----------------------------  ----------------------------------
+First commit                   2025-03-01
+Latest commit                  2026-03-14
+Most active weekday            Wednesday (3.42 C/D)
+Least active weekday           Sunday (0.25 C/D)
+Average commits per day        1.75
+Average files per commit       3.20
+Average files per day          5.60
+Average lines modified/commit  45.30
+Average lines modified/day     79.28
+Top file extensions            rs (142), md (28), toml (12)</pre>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p class="usage-label">Repository comparison (most active)</p>
+            <div class="terminal-window animate-on-scroll">
+              <div class="terminal-header" aria-hidden="true">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="terminal-title">~/projects</span>
+              </div>
+              <div class="terminal-body">
+<pre><span class="prompt">$</span> repolyze compare <span class="flag">--repo</span> ./api-v1 <span class="flag">--repo</span> ./api-v2 <span class="flag">--repo</span> ./web
+Period:    2025-09-01 .. 2026-03-15
+Projects:  3 repositories
+Folder:    /Users/dev/projects
+Mode:      Multi-repository
+Elapsed:   0.184s
+
+Most active repositories (commits per active day):
+
+Repository    Commits  Active days   C/D
+------------  -------  -----------  ----
+api-v2            312           78  4.00
+web               204           68  3.00
+api-v1             94           47  2.00
+
+Most active repositories by weekday (C/D):
+
+Weekday  #1                 #2                 #3
+-------  -----------------  -----------------  -----------------
+Mon      api-v2 (4.80)      web (3.10)         api-v1 (2.40)
+Tue      api-v2 (4.55)      web (3.25)         api-v1 (2.10)
+Wed      web (3.80)         api-v2 (3.70)      api-v1 (2.60)
+Thu      api-v2 (4.10)      web (3.15)         api-v1 (1.90)
+Fri      api-v2 (3.20)      web (2.40)         api-v1 (1.50)</pre>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
     <!-- Demo -->
     <section class="section-blue">
       <div class="container">
