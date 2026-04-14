@@ -23,7 +23,7 @@
   <meta name="twitter:description" content="A Rust CLI/TUI tool for analyzing local and GitHub Git repositories. Contributor stats, activity heatmaps, file metrics, JSON & Markdown export.">
   <meta name="twitter:image" content="https://repolyze.app/og.svg">
   <link rel="canonical" href="https://repolyze.app/">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://www.google-analytics.com https://www.googletagmanager.com;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://www.google-analytics.com https://www.googletagmanager.com https://api.github.com;">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90' font-family='monospace' fill='%233b82f6'>R</text></svg>">
   <script type="application/ld+json">
   {
@@ -35,7 +35,7 @@
     "operatingSystem": "macOS, Linux",
     "url": "https://repolyze.app/",
     "downloadUrl": "https://github.com/maximgorbatyuk/repolyze/releases",
-    "softwareVersion": "0.1.5",
+    "softwareVersion": "0.1.13",
     "license": "https://opensource.org/licenses/MIT",
     "author": {
       "@type": "Person",
@@ -211,6 +211,36 @@
       </div>
     </section>
 
+    <!-- Actively maintained -->
+    <section>
+      <div class="container">
+        <h2 class="section-title">Actively maintained</h2>
+        <p class="section-subtitle">Pulled live from GitHub at page load.</p>
+        <div class="status-card animate-on-scroll">
+          <div class="status-stats">
+            <div class="status-stat">
+              <p class="status-label">Status</p>
+              <p class="status-value">
+                <span class="status-dot" id="release-status-dot" aria-hidden="true"></span>
+                <span id="release-status-text">Active development</span>
+              </p>
+            </div>
+            <div class="status-stat">
+              <p class="status-label">Latest version</p>
+              <p class="status-value" id="release-version">v0.1.13</p>
+            </div>
+            <div class="status-stat">
+              <p class="status-label">Released</p>
+              <p class="status-value" id="release-when">&mdash;</p>
+            </div>
+          </div>
+          <div class="status-cta">
+            <a href="https://github.com/maximgorbatyuk/repolyze/releases" id="release-link" class="btn btn-secondary" target="_blank" rel="noopener">View release notes &rarr;</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Installation -->
     <section id="install" class="section-blue">
       <div class="container">
@@ -231,7 +261,7 @@
 
 <span class="comment"># Verify installation</span>
 <span class="prompt">$</span> repolyze <span class="flag">--version</span>
-repolyze 0.1.5</pre>
+repolyze 0.1.13</pre>
               </div>
             </div>
           </div>
@@ -249,7 +279,7 @@ repolyze 0.1.5</pre>
 
 <span class="comment"># Verify installation</span>
 <span class="prompt">$</span> repolyze <span class="flag">--version</span>
-repolyze 0.1.5</pre>
+repolyze 0.1.13</pre>
               </div>
             </div>
           </div>
@@ -628,7 +658,7 @@ Total                             54           16028            296.81          
             |_|            |___/</pre>
           <p class="footer-slogan">Know your code better.</p>
           <p>Analyzed locally or via GitHub API. Your data stays yours.</p>
-          <p class="footer-version">v0.1.5</p>
+          <p class="footer-version" id="footer-version">v0.1.13</p>
         </div>
         <div>
           <h3 class="footer-col-title">Our projects</h3>
@@ -706,6 +736,104 @@ Total                             54           16028            296.81          
           el.classList.add('visible');
         });
       }
+    });
+
+    // GitHub latest release: version + relative time, with 1h sessionStorage cache.
+    document.addEventListener('DOMContentLoaded', () => {
+      const CACHE_KEY = 'repolyze_latest_release_v1';
+      const CACHE_TTL_MS = 60 * 60 * 1000;
+      const STALE_THRESHOLD_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
+      const API_URL = 'https://api.github.com/repos/maximgorbatyuk/repolyze/releases/latest';
+
+      const versionEl = document.getElementById('release-version');
+      const whenEl = document.getElementById('release-when');
+      const linkEl = document.getElementById('release-link');
+      const statusTextEl = document.getElementById('release-status-text');
+      const statusDotEl = document.getElementById('release-status-dot');
+      const footerVersionEl = document.getElementById('footer-version');
+
+      if (!versionEl || !whenEl) return;
+
+      function relativeTime(fromDate) {
+        const diffMs = Date.now() - fromDate.getTime();
+        const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+        const units = [
+          ['year', 365 * 24 * 60 * 60 * 1000],
+          ['month', 30 * 24 * 60 * 60 * 1000],
+          ['week', 7 * 24 * 60 * 60 * 1000],
+          ['day', 24 * 60 * 60 * 1000],
+          ['hour', 60 * 60 * 1000],
+          ['minute', 60 * 1000],
+        ];
+        for (const [unit, ms] of units) {
+          if (diffMs >= ms) {
+            return rtf.format(-Math.floor(diffMs / ms), unit);
+          }
+        }
+        return 'just now';
+      }
+
+      function render(data) {
+        const tag = data.tag_name || '';
+        const publishedAt = data.published_at ? new Date(data.published_at) : null;
+        if (tag) {
+          versionEl.textContent = tag.startsWith('v') ? tag : 'v' + tag;
+          if (footerVersionEl) {
+            footerVersionEl.textContent = versionEl.textContent;
+          }
+        }
+        if (data.html_url && linkEl) {
+          linkEl.href = data.html_url;
+        }
+        if (publishedAt && !Number.isNaN(publishedAt.getTime())) {
+          whenEl.textContent = relativeTime(publishedAt);
+          whenEl.setAttribute('title', publishedAt.toISOString().slice(0, 10));
+          const isStale = (Date.now() - publishedAt.getTime()) > STALE_THRESHOLD_MS;
+          if (isStale && statusTextEl && statusDotEl) {
+            statusTextEl.textContent = 'Maintenance mode';
+            statusDotEl.classList.add('is-idle');
+          }
+        }
+      }
+
+      function fromCache() {
+        try {
+          const raw = sessionStorage.getItem(CACHE_KEY);
+          if (!raw) return null;
+          const parsed = JSON.parse(raw);
+          if (!parsed || !parsed.fetchedAt || (Date.now() - parsed.fetchedAt) > CACHE_TTL_MS) {
+            return null;
+          }
+          return parsed.data;
+        } catch (_) {
+          return null;
+        }
+      }
+
+      function writeCache(data) {
+        try {
+          sessionStorage.setItem(CACHE_KEY, JSON.stringify({ fetchedAt: Date.now(), data }));
+        } catch (_) { /* quota or disabled — ignore */ }
+      }
+
+      const cached = fromCache();
+      if (cached) {
+        render(cached);
+        return;
+      }
+
+      fetch(API_URL, { headers: { 'Accept': 'application/vnd.github+json' } })
+        .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+        .then(data => {
+          const slim = { tag_name: data.tag_name, published_at: data.published_at, html_url: data.html_url };
+          writeCache(slim);
+          render(slim);
+        })
+        .catch(() => {
+          // Leave static fallback text in place; dim the "Released" line.
+          whenEl.textContent = 'see GitHub';
+          if (statusDotEl) statusDotEl.classList.add('is-error');
+        });
     });
   </script>
 

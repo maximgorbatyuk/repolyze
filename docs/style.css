@@ -494,6 +494,70 @@ a:focus-visible, .btn:focus-visible {
   top: 0;
 }
 
+/* ── Actively maintained ── */
+
+.status-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 28px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.status-stats {
+  display: flex;
+  gap: 48px;
+  flex-wrap: wrap;
+}
+
+.status-stat {
+  min-width: 0;
+}
+
+.status-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.status-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--prompt-green);
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15);
+}
+
+.status-dot.is-idle {
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.15);
+}
+
+.status-dot.is-error {
+  background: var(--text-muted);
+  box-shadow: none;
+}
+
+.status-cta {
+  flex-shrink: 0;
+}
+
 /* ── Responsive ── */
 
 @media (max-width: 768px) {
@@ -515,6 +579,17 @@ a:focus-visible, .btn:focus-visible {
 
   section {
     padding: 48px 0;
+  }
+
+  .status-card {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 24px;
+  }
+
+  .status-stats {
+    gap: 24px;
+    width: 100%;
   }
 
   .footer-columns {
