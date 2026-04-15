@@ -868,7 +868,7 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
 name = "repolyze"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -887,7 +887,7 @@ dependencies = [
 
 [[package]]
 name = "repolyze-core"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "serde",
  "serde_json",
@@ -897,7 +897,7 @@ dependencies = [
 
 [[package]]
 name = "repolyze-git"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "anyhow",
  "repolyze-core",
@@ -906,7 +906,7 @@ dependencies = [
 
 [[package]]
 name = "repolyze-github"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "repolyze-core",
  "serde",
@@ -916,7 +916,7 @@ dependencies = [
 
 [[package]]
 name = "repolyze-metrics"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "ignore",
  "repolyze-core",
@@ -925,7 +925,7 @@ dependencies = [
 
 [[package]]
 name = "repolyze-report"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "anyhow",
  "repolyze-core",
@@ -934,7 +934,7 @@ dependencies = [
 
 [[package]]
 name = "repolyze-store"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "home",
  "repolyze-core",
@@ -946,7 +946,7 @@ dependencies = [
 
 [[package]]
 name = "repolyze-tui"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "anyhow",
  "crossterm",
