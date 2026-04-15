@@ -12,7 +12,7 @@ mod tests {
 
     use repolyze_core::model::{
         ActivitySummary, ComparisonSummary, ContributionSummary, ContributorStats, PartialFailure,
-        RepositoryAnalysis, RepositoryTarget, SizeMetrics,
+        RepositoryAnalysis, RepositoryTarget, SizeMetrics, TrendsData,
     };
 
     use super::*;
@@ -60,6 +60,7 @@ mod tests {
                 total_files: 10,
             },
             failures: vec![],
+            trends: TrendsData::default(),
         }
     }
 

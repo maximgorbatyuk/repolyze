@@ -138,6 +138,8 @@ pub struct ComparisonReport {
     pub repositories: Vec<RepositoryAnalysis>,
     pub summary: ComparisonSummary,
     pub failures: Vec<PartialFailure>,
+    #[serde(default)]
+    pub trends: TrendsData,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -189,6 +191,35 @@ pub struct UserEffortData {
     pub avg_lines_per_commit: f64,
     pub avg_lines_per_day: f64,
     pub top_extensions: Vec<(String, u64)>,
+    #[serde(default)]
+    pub trends: TrendsData,
+}
+
+/// Format a percent-change value for display. `None` renders as an em-dash — used when the prior
+/// window had zero commits so percent change is undefined.
+pub fn format_trend_change(change: Option<f64>) -> String {
+    match change {
+        Some(v) => format!("{v:+.1}%"),
+        None => "—".to_string(),
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TrendsData {
+    /// "YYYY-MM-DD" date used as the anchor for window math (usually "today").
+    pub reference_date: String,
+    /// Average commits per calendar day over the last 30 days (today-29 .. today).
+    pub last_30d_avg: f64,
+    /// Average commits per calendar day over the prior 30-day window (today-59 .. today-30).
+    pub prev_30d_avg: f64,
+    /// Percent change from prev_30d_avg to last_30d_avg. `None` when the prior window had zero commits.
+    pub change_30d_pct: Option<f64>,
+    /// Average commits per calendar day over the last 90 days.
+    pub last_90d_avg: f64,
+    /// Average commits per calendar day over the prior 90-day window.
+    pub prev_90d_avg: f64,
+    /// Percent change from prev_90d_avg to last_90d_avg. `None` when the prior window had zero commits.
+    pub change_90d_pct: Option<f64>,
 }
 
 impl fmt::Display for UserEffortData {

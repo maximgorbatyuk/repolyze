@@ -1,6 +1,7 @@
 use repolyze_core::analytics::{
     build_contribution_rows, build_user_activity_rows, build_user_effort_data,
 };
+use repolyze_core::date_util;
 use repolyze_core::input::resolve_inputs_with_failures;
 use repolyze_core::service::{RemoteAnalyzer, analyze_targets_with_store};
 use repolyze_core::settings::Settings;
@@ -68,7 +69,8 @@ pub fn run_analyze(
                 email.ok_or_else(|| anyhow::anyhow!("--email is required for user-effort view"))?;
             let folder = folder_display(repos);
             let header = render_analysis_header(&report.repositories, elapsed, &folder);
-            let effort = build_user_effort_data(&report.repositories, email, settings)
+            let today = date_util::today_ymd();
+            let effort = build_user_effort_data(&report.repositories, email, settings, &today)
                 .ok_or_else(|| anyhow::anyhow!("no data found for email '{email}'"))?;
             Ok(format!("{header}{}", render_user_effort_table(&effort)))
         }

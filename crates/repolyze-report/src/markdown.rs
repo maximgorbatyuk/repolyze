@@ -7,7 +7,8 @@ use repolyze_core::analytics::{
 use repolyze_core::chart_util::{fit_bar_dimensions, format_value_fit};
 use repolyze_core::date_util;
 use repolyze_core::model::{
-    BarChartData, ComparisonReport, ContributorStats, HeatmapData, TimelineData,
+    BarChartData, ComparisonReport, ContributorStats, HeatmapData, TimelineData, TrendsData,
+    format_trend_change,
 };
 use repolyze_core::settings::Settings;
 
@@ -102,6 +103,9 @@ pub fn render_markdown(report: &ComparisonReport, settings: &Settings) -> String
     // Commit timeline (weekly bar chart)
     let timeline = build_timeline_data(&report.repositories);
     out.push_str(&render_timeline_section(&timeline));
+
+    // Trends (30-day and 90-day current vs previous window)
+    out.push_str(&render_trends_section(&report.trends));
 
     // Size comparison
     out.push_str("## Size Comparison\n\n");
@@ -355,6 +359,31 @@ fn format_bars(bars: &[(String, u64)]) -> String {
     out
 }
 
+fn render_trends_section(data: &TrendsData) -> String {
+    let mut out = String::new();
+    out.push_str("## Trends\n\n");
+    out.push_str("Average commits per calendar day, current window vs. the preceding window of the same length.\n\n");
+    if !data.reference_date.is_empty() {
+        out.push_str(&format!("Reference date: {}\n\n", data.reference_date));
+    }
+    out.push_str("| Window | Current (C/D) | Previous (C/D) | Change |\n");
+    out.push_str("|---|---|---|---|\n");
+    out.push_str(&format!(
+        "| Last 30 days | {:.2} | {:.2} | {} |\n",
+        data.last_30d_avg,
+        data.prev_30d_avg,
+        format_trend_change(data.change_30d_pct),
+    ));
+    out.push_str(&format!(
+        "| Last 90 days | {:.2} | {:.2} | {} |\n",
+        data.last_90d_avg,
+        data.prev_90d_avg,
+        format_trend_change(data.change_90d_pct),
+    ));
+    out.push('\n');
+    out
+}
+
 fn render_bar_chart_section(data: &BarChartData) -> String {
     let mut out = String::new();
     out.push_str(&format!("## {}\n\n", data.title));
@@ -485,7 +514,7 @@ mod tests {
 
     use repolyze_core::model::{
         ActivitySummary, ComparisonSummary, ContributionSummary, ContributorStats, PartialFailure,
-        RepositoryAnalysis, RepositoryTarget, SizeMetrics,
+        RepositoryAnalysis, RepositoryTarget, SizeMetrics, TrendsData,
     };
 
     use super::*;
@@ -538,6 +567,7 @@ mod tests {
                 total_files: 35,
             },
             failures: vec![],
+            trends: TrendsData::default(),
         }
     }
 
@@ -607,6 +637,35 @@ mod tests {
 
         // Without settings, the author column shows the git name
         assert!(md.contains("| Alice | 15 | 300 | 75 | 225 |"));
+    }
+
+    #[test]
+    fn markdown_report_contains_trends_section() {
+        let report = make_two_repo_report();
+        let md = render_markdown(&report, &Settings::default());
+        assert!(md.contains("## Trends"));
+        assert!(md.contains("Last 30 days"));
+        assert!(md.contains("Last 90 days"));
+        // Column headers
+        assert!(md.contains("Current (C/D)"));
+        assert!(md.contains("Previous (C/D)"));
+    }
+
+    #[test]
+    fn render_trends_section_renders_change_and_dash_for_none() {
+        let data = TrendsData {
+            reference_date: "2026-04-15".to_string(),
+            last_30d_avg: 2.0,
+            prev_30d_avg: 1.0,
+            change_30d_pct: Some(100.0),
+            last_90d_avg: 0.5,
+            prev_90d_avg: 0.0,
+            change_90d_pct: None,
+        };
+        let out = render_trends_section(&data);
+        assert!(out.contains("+100.0%"));
+        assert!(out.contains("—"));
+        assert!(out.contains("2026-04-15"));
     }
 
     #[test]

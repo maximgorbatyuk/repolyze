@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.14] - 2026-04-15
+
+### Added
+
+- **Trends section in reports**: The full report (Markdown, JSON, and TUI "Full report" view) and the per-contributor user-effort report now include a "Trends" section showing average commits per calendar day for the last 30 days vs. the prior 30 days, and the last 90 days vs. the prior 90 days, with the percent change between the two windows. Percent change renders as an em-dash (`—`) when the prior window had zero commits (distinguishing "undefined" from a real change). The reference date (anchor for window math) is shown alongside the table.
+- **`TrendsData` model type**: New serializable struct in `repolyze-core` carrying the six computed values plus the reference date. Attached to both `UserEffortData` and `ComparisonReport` with `#[serde(default)]`, so cached JSON snapshots from earlier versions deserialize cleanly.
+- **`build_trends_data` and `build_overall_trends` analytics helpers**: Pure functions that compute trends from a `commits_by_date` map or aggregate across every contributor in every repo. Windows are inclusive calendar-day ranges anchored at the provided `today` date.
+
+### Changed
+
+- **`build_user_effort_data` now takes a `today: &str` argument**: The function previously read `today_ymd()` internally, making it non-deterministic in tests. Callers in the CLI and TUI now thread the current date through explicitly.
+
 ## [0.1.12] - 2026-04-12
 
 ### Fixed

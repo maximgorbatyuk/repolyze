@@ -1,7 +1,10 @@
 use std::time::Duration;
 
 use repolyze_core::analytics::RepoComparisonRow;
-use repolyze_core::model::{ContributionRow, RepositoryAnalysis, UserActivityRow, UserEffortData};
+use repolyze_core::model::{
+    ContributionRow, RepositoryAnalysis, TrendsData, UserActivityRow, UserEffortData,
+    format_trend_change,
+};
 
 pub const CONTRIBUTION_TITLE: &str = "Contribution";
 pub const CONTRIBUTION_DESC: &str =
@@ -21,6 +24,8 @@ pub const COMPARE_REPOS_DESC: &str =
 pub const USER_EFFORT_TITLE: &str = "User effort";
 pub const USER_EFFORT_DESC: &str =
     "Detailed activity and productivity metrics for a single contributor.";
+
+pub const TRENDS_TITLE: &str = "Trends";
 
 /// Build a summary header showing period, repo count, folder, mode, and elapsed time.
 pub fn render_analysis_header(
@@ -341,6 +346,37 @@ pub fn render_user_effort_table(data: &UserEffortData) -> String {
         .map(|(k, v)| vec![k.to_string(), v])
         .collect();
     out.push_str(&render_plain_table(headers, &data_rows, right_align, None));
+
+    out.push('\n');
+    out.push_str(&render_trends_table(&data.trends));
+
+    out
+}
+
+/// Render a trends sub-table showing average commits/day for current vs previous windows.
+pub fn render_trends_table(trends: &TrendsData) -> String {
+    let mut out = String::from("Trends (avg commits per calendar day)\n");
+    if !trends.reference_date.is_empty() {
+        out.push_str(&format!("Reference date: {}\n", trends.reference_date));
+    }
+    out.push('\n');
+    let headers = &["Window", "Current", "Previous", "Change"];
+    let right_align = &[false, true, true, true];
+    let rows: Vec<Vec<String>> = vec![
+        vec![
+            "Last 30 days".to_string(),
+            format!("{:.2}", trends.last_30d_avg),
+            format!("{:.2}", trends.prev_30d_avg),
+            format_trend_change(trends.change_30d_pct),
+        ],
+        vec![
+            "Last 90 days".to_string(),
+            format!("{:.2}", trends.last_90d_avg),
+            format!("{:.2}", trends.prev_90d_avg),
+            format_trend_change(trends.change_90d_pct),
+        ],
+    ];
+    out.push_str(&render_plain_table(headers, &rows, right_align, None));
     out
 }
 
@@ -572,6 +608,7 @@ mod tests {
                 ("md".to_string(), 28),
                 ("toml".to_string(), 12),
             ],
+            trends: repolyze_core::model::TrendsData::default(),
         };
 
         let table = render_user_effort_table(&data);
@@ -587,5 +624,43 @@ mod tests {
         assert!(table.contains("rs (142), md (28), toml (12)"));
         assert!(!table.contains('|'));
         assert!(table.contains("---"));
+    }
+
+    #[test]
+    fn render_user_effort_table_includes_trends_subsection() {
+        let data = repolyze_core::model::UserEffortData {
+            name: "Alice".to_string(),
+            identifier: "alice@example.com".to_string(),
+            first_commit: "2024-03-01".to_string(),
+            last_commit: "2025-03-15".to_string(),
+            most_active_weekday: "Monday".to_string(),
+            most_active_weekday_commits_per_day: 0.0,
+            average_commits_per_day: 0.0,
+            least_active_weekday: "Sunday".to_string(),
+            least_active_weekday_commits_per_day: 0.0,
+            avg_files_per_commit: 0.0,
+            avg_files_per_day: 0.0,
+            avg_lines_per_commit: 0.0,
+            avg_lines_per_day: 0.0,
+            top_extensions: vec![],
+            trends: repolyze_core::model::TrendsData {
+                reference_date: "2026-04-15".to_string(),
+                last_30d_avg: 2.0,
+                prev_30d_avg: 1.0,
+                change_30d_pct: Some(100.0),
+                last_90d_avg: 0.5,
+                prev_90d_avg: 0.0,
+                change_90d_pct: None,
+            },
+        };
+
+        let table = render_user_effort_table(&data);
+        assert!(table.contains("Trends"));
+        assert!(table.contains("Last 30 days"));
+        assert!(table.contains("Last 90 days"));
+        assert!(table.contains("+100.0%"));
+        assert!(table.contains("—"));
+        // No markdown pipes — consistent with other tables
+        assert!(!table.contains('|'));
     }
 }

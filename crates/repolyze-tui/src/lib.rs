@@ -28,9 +28,9 @@ use repolyze_git::branches;
 use repolyze_metrics::FilesystemMetricsBackend;
 use repolyze_report::markdown::render_markdown;
 use repolyze_report::table::{
-    ACTIVITY_TITLE, COMPARE_REPOS_TITLE, CONTRIBUTION_TITLE, render_analysis_header,
-    render_contribution_table, render_repo_comparison_table, render_user_activity_table,
-    render_user_effort_table,
+    ACTIVITY_TITLE, COMPARE_REPOS_TITLE, CONTRIBUTION_TITLE, TRENDS_TITLE, render_analysis_header,
+    render_contribution_table, render_repo_comparison_table, render_trends_table,
+    render_user_activity_table, render_user_effort_table,
 };
 
 use app::{AnalyzeView, AppAction, AppState, GitToolsMode};
@@ -360,6 +360,7 @@ where
                         total_files: 0,
                     },
                     failures: vec![],
+                    trends: repolyze_core::model::TrendsData::default(),
                 },
                 table_text: String::new(),
                 heatmap_data: None,
@@ -439,6 +440,8 @@ where
             combined.push_str(&render_contribution_table(&contrib_rows));
             combined.push_str(&format!("\n\n#2 {ACTIVITY_TITLE}\n\n"));
             combined.push_str(&render_user_activity_table(&activity_rows));
+            combined.push_str(&format!("\n\n#3 {TRENDS_TITLE}\n\n"));
+            combined.push_str(&render_trends_table(&report.trends));
             // Include repo comparison if multi-repo
             if report.repositories.len() > 1 {
                 let comparison = build_repo_comparison(&report.repositories);
@@ -690,7 +693,7 @@ fn render_user_effort_for_selected(app: &mut AppState, settings: &Settings) {
 
     let today = repolyze_core::date_util::today_ymd();
 
-    if let Some(effort) = build_user_effort_data(repos, &identifier, settings) {
+    if let Some(effort) = build_user_effort_data(repos, &identifier, settings, &today) {
         let table_body = render_user_effort_table(&effort);
         app.analysis_table = Some(format!("{header}{table_body}"));
         let hm = build_heatmap_data(repos, Some(&identifier), &today, settings);
@@ -1080,6 +1083,7 @@ mod tests {
                 total_files: 0,
             },
             failures: vec![],
+            trends: repolyze_core::model::TrendsData::default(),
         });
 
         export_markdown(&mut app, &Settings::default());

@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use crate::date_util;
 use crate::model::{
     BarChartData, ContributionRow, DAYS_IN_WEEK, HEATMAP_MAX_WEEKS, HeatmapData,
-    RepositoryAnalysis, TimelineData, UserActivityRow, UserEffortData,
+    RepositoryAnalysis, TimelineData, TrendsData, UserActivityRow, UserEffortData,
 };
 use crate::settings::Settings;
 
@@ -307,10 +307,94 @@ pub fn get_contributor_emails(
     entries.into_iter().map(|(e, n, _)| (e, n)).collect()
 }
 
+/// Sum commits in `commits_by_date` whose date falls in the inclusive window `[start, end]`.
+fn sum_commits_in_window(commits_by_date: &BTreeMap<String, u32>, start: &str, end: &str) -> u64 {
+    commits_by_date
+        .range(start.to_string()..=end.to_string())
+        .map(|(_, c)| *c as u64)
+        .sum()
+}
+
+/// Compute trends (30-day and 90-day, current vs previous window) from a per-date commit map.
+///
+/// Windows are inclusive:
+/// - last_30d:  `[today-29 .. today]`
+/// - prev_30d:  `[today-59 .. today-30]`
+/// - last_90d:  `[today-89 .. today]`
+/// - prev_90d:  `[today-179 .. today-90]`
+///
+/// Averages are commits per calendar day in the window (sum / 30 or sum / 90).
+/// Percent change is `(current - prev) / prev * 100`, or `None` when the prior window had zero
+/// commits. Note this conflates "no prior activity" with "no current activity either" — callers
+/// that need to distinguish should inspect `prev_*_avg` and `last_*_avg` directly.
+///
+/// If `today` is not a valid "YYYY-MM-DD" date, returns `TrendsData::default()` with the given
+/// string echoed back as `reference_date` (all averages zero, all percent changes `None`).
+pub fn build_trends_data(commits_by_date: &BTreeMap<String, u32>, today: &str) -> TrendsData {
+    if date_util::parse_ymd(today).is_none() {
+        return TrendsData {
+            reference_date: today.to_string(),
+            ..TrendsData::default()
+        };
+    }
+
+    let last_30d_start = date_util::add_days(today, -29);
+    let prev_30d_end = date_util::add_days(today, -30);
+    let prev_30d_start = date_util::add_days(today, -59);
+    let last_90d_start = date_util::add_days(today, -89);
+    let prev_90d_end = date_util::add_days(today, -90);
+    let prev_90d_start = date_util::add_days(today, -179);
+
+    let last_30d_sum = sum_commits_in_window(commits_by_date, &last_30d_start, today);
+    let prev_30d_sum = sum_commits_in_window(commits_by_date, &prev_30d_start, &prev_30d_end);
+    let last_90d_sum = sum_commits_in_window(commits_by_date, &last_90d_start, today);
+    let prev_90d_sum = sum_commits_in_window(commits_by_date, &prev_90d_start, &prev_90d_end);
+
+    let last_30d_avg = last_30d_sum as f64 / 30.0;
+    let prev_30d_avg = prev_30d_sum as f64 / 30.0;
+    let last_90d_avg = last_90d_sum as f64 / 90.0;
+    let prev_90d_avg = prev_90d_sum as f64 / 90.0;
+
+    let change_30d_pct = if prev_30d_sum > 0 {
+        Some((last_30d_avg - prev_30d_avg) / prev_30d_avg * 100.0)
+    } else {
+        None
+    };
+    let change_90d_pct = if prev_90d_sum > 0 {
+        Some((last_90d_avg - prev_90d_avg) / prev_90d_avg * 100.0)
+    } else {
+        None
+    };
+
+    TrendsData {
+        reference_date: today.to_string(),
+        last_30d_avg,
+        prev_30d_avg,
+        change_30d_pct,
+        last_90d_avg,
+        prev_90d_avg,
+        change_90d_pct,
+    }
+}
+
+/// Merge per-date commit counts across every contributor in every repo, then compute overall trends.
+pub fn build_overall_trends(repos: &[RepositoryAnalysis], today: &str) -> TrendsData {
+    let mut merged: BTreeMap<String, u32> = BTreeMap::new();
+    for repo in repos {
+        for act in &repo.contributions.activity_by_contributor {
+            for (date, count) in &act.commits_by_date {
+                *merged.entry(date.clone()).or_insert(0) += count;
+            }
+        }
+    }
+    build_trends_data(&merged, today)
+}
+
 pub fn build_user_effort_data(
     repos: &[RepositoryAnalysis],
     identifier: &str,
     settings: &Settings,
+    today: &str,
 ) -> Option<UserEffortData> {
     let merged = merge_activity_by_email(repos, settings);
     // Look up by the identifier as-is first (handles canonical names from settings),
@@ -388,6 +472,8 @@ pub fn build_user_effort_data(
     ext_vec.sort_by(|a, b| b.1.cmp(&a.1));
     ext_vec.truncate(TOP_EXTENSIONS_LIMIT);
 
+    let trends = build_trends_data(&m.commits_by_date, today);
+
     Some(UserEffortData {
         name: m.name.clone(),
         identifier: display_identifier,
@@ -407,6 +493,7 @@ pub fn build_user_effort_data(
         avg_lines_per_commit,
         avg_lines_per_day,
         top_extensions: ext_vec,
+        trends,
     })
 }
 
@@ -942,7 +1029,9 @@ mod tests {
             4,
         )];
 
-        let effort = build_user_effort_data(&repos, "alice@example.com", &no_settings()).unwrap();
+        let effort =
+            build_user_effort_data(&repos, "alice@example.com", &no_settings(), "2026-04-15")
+                .unwrap();
         assert_eq!(effort.identifier, "alice@example.com");
         assert_eq!(effort.most_active_weekday, "Monday");
         assert_eq!(effort.least_active_weekday, "Friday");
@@ -954,7 +1043,9 @@ mod tests {
     #[test]
     fn build_user_effort_data_cross_repo_merge() {
         let repos = make_report_with_shared_contributor();
-        let effort = build_user_effort_data(&repos, "alice@example.com", &no_settings()).unwrap();
+        let effort =
+            build_user_effort_data(&repos, "alice@example.com", &no_settings(), "2026-04-15")
+                .unwrap();
         assert_eq!(effort.identifier, "alice@example.com");
         // 5 commits / 3 distinct active dates
         assert!((effort.average_commits_per_day - 5.0 / 3.0).abs() < 0.01);
@@ -966,7 +1057,10 @@ mod tests {
     #[test]
     fn build_user_effort_data_unknown_email() {
         let repos = make_report_with_shared_contributor();
-        assert!(build_user_effort_data(&repos, "nobody@example.com", &no_settings()).is_none());
+        assert!(
+            build_user_effort_data(&repos, "nobody@example.com", &no_settings(), "2026-04-15")
+                .is_none()
+        );
     }
 
     #[test]
@@ -1054,5 +1148,160 @@ mod tests {
         assert!(timeline.points.is_empty());
         assert!(timeline.start_date.is_empty());
         assert!(timeline.end_date.is_empty());
+    }
+
+    #[test]
+    fn build_trends_data_empty_map() {
+        let map: BTreeMap<String, u32> = BTreeMap::new();
+        let trends = build_trends_data(&map, "2026-04-15");
+        assert_eq!(trends.reference_date, "2026-04-15");
+        assert_eq!(trends.last_30d_avg, 0.0);
+        assert_eq!(trends.prev_30d_avg, 0.0);
+        assert_eq!(trends.last_90d_avg, 0.0);
+        assert_eq!(trends.prev_90d_avg, 0.0);
+        assert!(trends.change_30d_pct.is_none());
+        assert!(trends.change_90d_pct.is_none());
+    }
+
+    #[test]
+    fn build_trends_data_windows_and_percent_change() {
+        // Reference date 2026-04-15.
+        // last_30d  = [2026-03-17 .. 2026-04-15] — place 60 commits on 2026-04-10
+        // prev_30d  = [2026-02-15 .. 2026-03-16] — place 30 commits on 2026-03-01
+        // last_90d  = [2026-01-16 .. 2026-04-15] — includes both above (90 total)
+        // prev_90d  = [2025-10-18 .. 2026-01-15] — place 45 commits on 2025-12-01
+        let mut map = BTreeMap::new();
+        map.insert("2026-04-10".to_string(), 60u32);
+        map.insert("2026-03-01".to_string(), 30u32);
+        map.insert("2025-12-01".to_string(), 45u32);
+        // Outside all windows — should not be counted
+        map.insert("2020-01-01".to_string(), 999u32);
+
+        let trends = build_trends_data(&map, "2026-04-15");
+        // 30d windows
+        assert!((trends.last_30d_avg - 60.0 / 30.0).abs() < 1e-9);
+        assert!((trends.prev_30d_avg - 30.0 / 30.0).abs() < 1e-9);
+        // (2.0 - 1.0) / 1.0 * 100 = +100.0
+        assert!((trends.change_30d_pct.unwrap() - 100.0).abs() < 1e-9);
+        // 90d windows
+        assert!((trends.last_90d_avg - (60.0 + 30.0) / 90.0).abs() < 1e-9);
+        assert!((trends.prev_90d_avg - 45.0 / 90.0).abs() < 1e-9);
+        // (1.0 - 0.5) / 0.5 * 100 = +100.0
+        assert!((trends.change_90d_pct.unwrap() - 100.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn build_trends_data_no_prior_activity_returns_none() {
+        // Commits only in last_30d window — prev windows are empty
+        let mut map = BTreeMap::new();
+        map.insert("2026-04-01".to_string(), 15u32);
+        let trends = build_trends_data(&map, "2026-04-15");
+        assert!(trends.last_30d_avg > 0.0);
+        assert_eq!(trends.prev_30d_avg, 0.0);
+        assert!(trends.change_30d_pct.is_none());
+        assert!(trends.change_90d_pct.is_none());
+    }
+
+    #[test]
+    fn build_trends_data_invalid_today_returns_default_with_echo() {
+        let mut map = BTreeMap::new();
+        map.insert("2026-04-10".to_string(), 100u32);
+        let trends = build_trends_data(&map, "not-a-date");
+        assert_eq!(trends.reference_date, "not-a-date");
+        assert_eq!(trends.last_30d_avg, 0.0);
+        assert_eq!(trends.last_90d_avg, 0.0);
+        assert!(trends.change_30d_pct.is_none());
+        assert!(trends.change_90d_pct.is_none());
+    }
+
+    #[test]
+    fn build_trends_data_far_edge_boundaries_are_exclusive() {
+        // today-60 falls before prev_30d_start (today-59) → must NOT be counted in prev_30d.
+        // today-180 falls before prev_90d_start (today-179) → must NOT be counted in prev_90d.
+        let mut map = BTreeMap::new();
+        map.insert("2026-02-14".to_string(), 500u32); // 2026-04-15 minus 60 days
+        map.insert("2025-10-17".to_string(), 900u32); // 2026-04-15 minus 180 days
+        let trends = build_trends_data(&map, "2026-04-15");
+        assert_eq!(trends.prev_30d_avg, 0.0);
+        assert_eq!(trends.prev_90d_avg, 0.0);
+        assert!(trends.change_30d_pct.is_none());
+        assert!(trends.change_90d_pct.is_none());
+    }
+
+    #[test]
+    fn build_overall_trends_empty_repos() {
+        let trends = build_overall_trends(&[], "2026-04-15");
+        assert_eq!(trends.reference_date, "2026-04-15");
+        assert_eq!(trends.last_30d_avg, 0.0);
+        assert_eq!(trends.last_90d_avg, 0.0);
+        assert!(trends.change_30d_pct.is_none());
+    }
+
+    #[test]
+    fn build_trends_data_boundary_dates_are_inclusive() {
+        // Exactly 29 days ago is the earliest date still in last_30d
+        let mut map = BTreeMap::new();
+        map.insert("2026-03-17".to_string(), 30u32); // today-29
+        map.insert("2026-04-15".to_string(), 0u32); // today
+        // today-30 is the latest date in prev_30d
+        map.insert("2026-03-16".to_string(), 60u32);
+
+        let trends = build_trends_data(&map, "2026-04-15");
+        assert!((trends.last_30d_avg - 1.0).abs() < 1e-9); // 30 / 30
+        assert!((trends.prev_30d_avg - 2.0).abs() < 1e-9); // 60 / 30
+    }
+
+    #[test]
+    fn build_overall_trends_merges_across_repos_and_contributors() {
+        // Two repos, each with one contributor; same date appears in both
+        let mut weekday = [0u32; 7];
+        weekday[0] = 1;
+        let hour = [0u32; 24];
+
+        let mut act_a = make_activity("alice@example.com", weekday, hour, &["2026-04-10"]);
+        act_a.commits_by_date.insert("2026-04-10".to_string(), 4);
+        let mut act_b = make_activity("bob@example.com", weekday, hour, &["2026-04-10"]);
+        act_b.commits_by_date.insert("2026-04-10".to_string(), 6);
+
+        let repo_a = make_repo(
+            "repo-a",
+            vec![make_contributor("alice@example.com", 4, 0, 0, 0)],
+            vec![act_a],
+            4,
+        );
+        let repo_b = make_repo(
+            "repo-b",
+            vec![make_contributor("bob@example.com", 6, 0, 0, 0)],
+            vec![act_b],
+            6,
+        );
+
+        let trends = build_overall_trends(&[repo_a, repo_b], "2026-04-15");
+        // 4 + 6 = 10 commits in the 30-day window → 10/30
+        assert!((trends.last_30d_avg - 10.0 / 30.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn build_user_effort_data_includes_trends() {
+        let mut weekday = [0u32; 7];
+        weekday[0] = 1;
+        let hour = [0u32; 24];
+
+        let today = "2026-04-15";
+        let recent = date_util::add_days(today, -1);
+        let mut act = make_activity("alice@example.com", weekday, hour, &[&recent]);
+        act.commits_by_date.insert(recent.clone(), 3);
+
+        let repos = vec![make_repo(
+            "repo-a",
+            vec![make_contributor("alice@example.com", 3, 0, 0, 0)],
+            vec![act],
+            3,
+        )];
+
+        let effort =
+            build_user_effort_data(&repos, "alice@example.com", &no_settings(), today).unwrap();
+        assert_eq!(effort.trends.reference_date, today);
+        assert!((effort.trends.last_30d_avg - 3.0 / 30.0).abs() < 1e-9);
     }
 }

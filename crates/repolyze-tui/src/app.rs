@@ -864,6 +864,7 @@ mod tests {
                 total_files: 0,
             },
             failures: vec![],
+            trends: repolyze_core::model::TrendsData::default(),
         });
         app.analysis_table = Some("stale".to_string());
         app.input_buffer = "old".to_string();
@@ -1134,6 +1135,7 @@ mod tests {
                 total_files: 0,
             },
             failures: vec![],
+            trends: repolyze_core::model::TrendsData::default(),
         });
         app.is_loading = true;
         app.request_export();
@@ -1152,6 +1154,7 @@ mod tests {
                 total_files: 0,
             },
             failures: vec![],
+            trends: repolyze_core::model::TrendsData::default(),
         });
         app.request_export();
         assert_eq!(app.pending_action, Some(AppAction::ExportMarkdown));
