@@ -5,7 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.14] - 2026-04-15
+## [0.1.16] - 2026-04-15
+
+### Added
+
+- **Productivity Trend section in reports**: The full report (Markdown, JSON, and TUI "Full report" view) and the per-contributor user-effort report now include a "Productivity Trend" section — a bar chart of commits per calendar week over the last 13 weeks (≈ 90 days), anchored at today's date. Weeks are Monday-starting and the series is zero-filled for inactive weeks so the chart is continuous. The final bar represents the current calendar week and may be a partial week; both the subtitle and the `ProductivityTrendData` docstring call this out explicitly so it isn't mistaken for a completed week.
+- **`ProductivityTrendData` and `WeekBucket` model types**: New serializable structs in `repolyze-core` carrying the reference date, window start/end (both Mondays), and one bucket per week. Attached to both `UserEffortData` and `ComparisonReport` with `#[serde(default)]`, so cached JSON snapshots from earlier versions deserialize cleanly.
+- **`build_productivity_trend` and `build_overall_productivity_trend` analytics helpers**: Pure functions that compute the weekly series from a `commits_by_date` map or aggregate across every contributor in every repo. Returns a zero-filled 13-week series when there's no data; returns a default `ProductivityTrendData` with `reference_date` echoed back when `today` is not a valid date.
+- **`date_util::monday_of_week` helper**: Returns the Monday of the week containing a given "YYYY-MM-DD" date as `Option<String>`, or `None` for invalid input.
+- **`chart_util::render_sparkline_bars` and `SPARKLINE_BLOCKS`**: Shared helper for rendering 8-row block-character bar charts (sparkline rows + value row + label row) into a `String`. Consolidates rendering previously duplicated between the Markdown `format_bars` and the plain-text user-effort chart.
+
+### Changed
+
+- **Schema version bumped to 5**: Invalidates cached snapshots from prior versions because `ComparisonReport` and `UserEffortData` gained the new `productivity_trend` field. No SQL migration required — the data lives inside the JSON blob.
+
+## [0.1.15] - 2026-04-15
 
 ### Added
 

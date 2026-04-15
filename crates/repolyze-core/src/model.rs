@@ -140,6 +140,8 @@ pub struct ComparisonReport {
     pub failures: Vec<PartialFailure>,
     #[serde(default)]
     pub trends: TrendsData,
+    #[serde(default)]
+    pub productivity_trend: ProductivityTrendData,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,6 +195,8 @@ pub struct UserEffortData {
     pub top_extensions: Vec<(String, u64)>,
     #[serde(default)]
     pub trends: TrendsData,
+    #[serde(default)]
+    pub productivity_trend: ProductivityTrendData,
 }
 
 /// Format a percent-change value for display. `None` renders as an em-dash — used when the prior
@@ -202,6 +206,39 @@ pub fn format_trend_change(change: Option<f64>) -> String {
         Some(v) => format!("{v:+.1}%"),
         None => "—".to_string(),
     }
+}
+
+/// A single week bucket in a productivity-trend chart.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct WeekBucket {
+    /// Monday of the week as "YYYY-MM-DD".
+    pub week_start: String,
+    /// Total commits that fell within this week's `[Monday..Sunday]` inclusive range.
+    pub commits: u32,
+}
+
+/// Commits-per-week time series over the last 13 calendar weeks (≈ 90 days), anchored at
+/// `reference_date`.
+///
+/// Weeks are Monday-starting. `weeks` is ordered oldest-first and zero-filled for weeks with
+/// no activity so callers can render a continuous chart without gaps.
+///
+/// The final bucket represents the calendar week containing `reference_date`. If
+/// `reference_date` is not a Sunday, that week is **partial**: the bucket still spans the
+/// full `Monday..=Sunday` range, but commits on dates after `reference_date` are expected to
+/// be zero (if they exist — e.g. from clock skew — they are still counted in that week).
+/// Callers rendering charts should surface this so the current-week bar isn't mistaken for
+/// a completed week.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ProductivityTrendData {
+    /// "YYYY-MM-DD" anchor date (usually "today") used to determine the trailing window.
+    pub reference_date: String,
+    /// Monday of the earliest week in the window.
+    pub window_start: String,
+    /// Monday of the latest week in the window (the week containing `reference_date`).
+    pub window_end: String,
+    /// One bucket per week, oldest first. Empty when `reference_date` is invalid.
+    pub weeks: Vec<WeekBucket>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

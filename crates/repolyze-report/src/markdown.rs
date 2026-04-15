@@ -4,11 +4,11 @@ use repolyze_core::analytics::{
     RepoComparisonRow, build_heatmap_data, build_hourly_chart_data, build_repo_comparison,
     build_timeline_data, build_weekday_chart_data,
 };
-use repolyze_core::chart_util::{fit_bar_dimensions, format_value_fit};
+use repolyze_core::chart_util::{SPARKLINE_BLOCKS, render_sparkline_bars};
 use repolyze_core::date_util;
 use repolyze_core::model::{
-    BarChartData, ComparisonReport, ContributorStats, HeatmapData, TimelineData, TrendsData,
-    format_trend_change,
+    BarChartData, ComparisonReport, ContributorStats, HeatmapData, ProductivityTrendData,
+    TimelineData, TrendsData, format_trend_change,
 };
 use repolyze_core::settings::Settings;
 
@@ -106,6 +106,11 @@ pub fn render_markdown(report: &ComparisonReport, settings: &Settings) -> String
 
     // Trends (30-day and 90-day current vs previous window)
     out.push_str(&render_trends_section(&report.trends));
+
+    // Productivity Trend (weekly commits, last 90 days)
+    out.push_str(&render_productivity_trend_section(
+        &report.productivity_trend,
+    ));
 
     // Size comparison
     out.push_str("## Size Comparison\n\n");
@@ -296,66 +301,42 @@ fn render_heatmap_section(data: &HeatmapData) -> String {
     out
 }
 
-const SPARKLINE_BLOCKS: [&str; 8] = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
-
 /// Target width for bar charts in Markdown output — fits a standard 80-col terminal.
 const BAR_CHART_MAX_WIDTH: usize = 80;
 
 fn format_bars(bars: &[(String, u64)]) -> String {
-    let max_val = bars.iter().map(|(_, v)| *v).max().unwrap_or(0);
-    if max_val == 0 {
-        let labels: String = bars
-            .iter()
-            .map(|(l, _)| l.as_str())
-            .collect::<Vec<_>>()
-            .join(" ");
-        return format!("{labels}\n(no data)\n");
+    render_sparkline_bars(bars, BAR_CHART_MAX_WIDTH, "(no data)")
+}
+
+fn render_productivity_trend_section(data: &ProductivityTrendData) -> String {
+    if data.weeks.is_empty() {
+        return String::new();
     }
 
-    let (col_width, gap, display_labels) = fit_bar_dimensions(bars, BAR_CHART_MAX_WIDTH);
+    let mut out = String::from("## Productivity Trend\n\n");
+    out.push_str(
+        "Commits per week over the last 13 weeks (weeks start Monday; the final bar may be a partial week).\n\n",
+    );
+    if !data.reference_date.is_empty() {
+        out.push_str(&format!("Reference date: {}\n\n", data.reference_date));
+    }
 
-    let chart_height: usize = 8;
-    let mut out = String::new();
-
-    for row in (0..chart_height).rev() {
-        let threshold = (row as f64 + 0.5) / chart_height as f64;
-        for (i, (_, value)) in bars.iter().enumerate() {
-            if i > 0 && gap > 0 {
-                out.push_str(&" ".repeat(gap));
-            }
-            let ratio = *value as f64 / max_val as f64;
-            if ratio >= threshold {
-                let block = if ratio >= threshold + 1.0 / chart_height as f64 {
-                    "█"
-                } else {
-                    let frac = ((ratio - threshold) * chart_height as f64 * 8.0).round() as usize;
-                    SPARKLINE_BLOCKS[frac.min(7)]
-                };
-                out.push_str(&block.repeat(col_width));
+    let bars: Vec<(String, u64)> = data
+        .weeks
+        .iter()
+        .map(|w| {
+            let label = if w.week_start.len() >= 10 {
+                w.week_start[5..10].to_string()
             } else {
-                out.push_str(&" ".repeat(col_width));
-            }
-        }
-        out.push('\n');
-    }
+                w.week_start.clone()
+            };
+            (label, w.commits as u64)
+        })
+        .collect();
 
-    for (i, (_, value)) in bars.iter().enumerate() {
-        if i > 0 && gap > 0 {
-            out.push_str(&" ".repeat(gap));
-        }
-        let text = format_value_fit(*value, col_width);
-        out.push_str(&format!("{:^col_width$}", text));
-    }
-    out.push('\n');
-
-    for (i, label) in display_labels.iter().enumerate() {
-        if i > 0 && gap > 0 {
-            out.push_str(&" ".repeat(gap));
-        }
-        out.push_str(&format!("{:^col_width$}", label));
-    }
-    out.push('\n');
-
+    out.push_str("```\n");
+    out.push_str(&format_bars(&bars));
+    out.push_str("```\n\n");
     out
 }
 
@@ -514,7 +495,7 @@ mod tests {
 
     use repolyze_core::model::{
         ActivitySummary, ComparisonSummary, ContributionSummary, ContributorStats, PartialFailure,
-        RepositoryAnalysis, RepositoryTarget, SizeMetrics, TrendsData,
+        ProductivityTrendData, RepositoryAnalysis, RepositoryTarget, SizeMetrics, TrendsData,
     };
 
     use super::*;
@@ -568,6 +549,7 @@ mod tests {
             },
             failures: vec![],
             trends: TrendsData::default(),
+            productivity_trend: ProductivityTrendData::default(),
         }
     }
 
@@ -649,6 +631,37 @@ mod tests {
         // Column headers
         assert!(md.contains("Current (C/D)"));
         assert!(md.contains("Previous (C/D)"));
+    }
+
+    #[test]
+    fn render_productivity_trend_section_renders_chart() {
+        let data = ProductivityTrendData {
+            reference_date: "2026-04-15".to_string(),
+            window_start: "2026-04-06".to_string(),
+            window_end: "2026-04-13".to_string(),
+            weeks: vec![
+                repolyze_core::model::WeekBucket {
+                    week_start: "2026-04-06".to_string(),
+                    commits: 3,
+                },
+                repolyze_core::model::WeekBucket {
+                    week_start: "2026-04-13".to_string(),
+                    commits: 8,
+                },
+            ],
+        };
+        let out = render_productivity_trend_section(&data);
+        assert!(out.contains("## Productivity Trend"));
+        assert!(out.contains("2026-04-15"));
+        assert!(out.contains("04-06"));
+        assert!(out.contains("04-13"));
+        assert!(out.contains("```"));
+    }
+
+    #[test]
+    fn render_productivity_trend_section_empty_returns_empty() {
+        let out = render_productivity_trend_section(&ProductivityTrendData::default());
+        assert!(out.is_empty());
     }
 
     #[test]

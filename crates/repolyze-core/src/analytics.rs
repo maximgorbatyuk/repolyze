@@ -3,7 +3,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use crate::date_util;
 use crate::model::{
     BarChartData, ContributionRow, DAYS_IN_WEEK, HEATMAP_MAX_WEEKS, HeatmapData,
-    RepositoryAnalysis, TimelineData, TrendsData, UserActivityRow, UserEffortData,
+    ProductivityTrendData, RepositoryAnalysis, TimelineData, TrendsData, UserActivityRow,
+    UserEffortData, WeekBucket,
 };
 use crate::settings::Settings;
 
@@ -390,6 +391,72 @@ pub fn build_overall_trends(repos: &[RepositoryAnalysis], today: &str) -> Trends
     build_trends_data(&merged, today)
 }
 
+/// Number of Monday-starting weeks shown in the productivity-trend chart. 13 weeks × 7 days = 91
+/// calendar days — the nearest whole-week cover of "last 90 days".
+pub const PRODUCTIVITY_TREND_WEEKS: usize = 13;
+
+/// Build a week-bucketed commits-per-week series covering the last 13 weeks (≈ 90 days),
+/// anchored at `today`.
+///
+/// Weeks are Monday-starting. The returned `weeks` vec always has exactly
+/// [`PRODUCTIVITY_TREND_WEEKS`] entries, oldest first, zero-filled for inactive weeks.
+/// If `today` is not a valid "YYYY-MM-DD" date, returns a default
+/// [`ProductivityTrendData`] with `reference_date` echoed back and an empty `weeks` vec.
+pub fn build_productivity_trend(
+    commits_by_date: &BTreeMap<String, u32>,
+    today: &str,
+) -> ProductivityTrendData {
+    let Some(window_end) = date_util::monday_of_week(today) else {
+        return ProductivityTrendData {
+            reference_date: today.to_string(),
+            ..ProductivityTrendData::default()
+        };
+    };
+
+    let window_start = date_util::add_days(&window_end, -7 * (PRODUCTIVITY_TREND_WEEKS as i32 - 1));
+
+    let mut weeks: Vec<WeekBucket> = Vec::with_capacity(PRODUCTIVITY_TREND_WEEKS);
+    for i in 0..PRODUCTIVITY_TREND_WEEKS {
+        let week_start = date_util::add_days(&window_start, 7 * i as i32);
+        let week_end = date_util::add_days(&week_start, 6);
+        // Seven u32 per-day counts cannot overflow u32 in practice (would require 4B+
+        // commits/day); sum in u64 only for headroom during iteration.
+        let sum: u64 = commits_by_date
+            .range(week_start.clone()..=week_end)
+            .map(|(_, c)| *c as u64)
+            .sum();
+        debug_assert!(sum <= u32::MAX as u64);
+        weeks.push(WeekBucket {
+            week_start,
+            commits: sum as u32,
+        });
+    }
+
+    ProductivityTrendData {
+        reference_date: today.to_string(),
+        window_start,
+        window_end,
+        weeks,
+    }
+}
+
+/// Merge per-date commit counts across every contributor in every repo, then build the
+/// productivity-trend series.
+pub fn build_overall_productivity_trend(
+    repos: &[RepositoryAnalysis],
+    today: &str,
+) -> ProductivityTrendData {
+    let mut merged: BTreeMap<String, u32> = BTreeMap::new();
+    for repo in repos {
+        for act in &repo.contributions.activity_by_contributor {
+            for (date, count) in &act.commits_by_date {
+                *merged.entry(date.clone()).or_insert(0) += count;
+            }
+        }
+    }
+    build_productivity_trend(&merged, today)
+}
+
 pub fn build_user_effort_data(
     repos: &[RepositoryAnalysis],
     identifier: &str,
@@ -473,6 +540,7 @@ pub fn build_user_effort_data(
     ext_vec.truncate(TOP_EXTENSIONS_LIMIT);
 
     let trends = build_trends_data(&m.commits_by_date, today);
+    let productivity_trend = build_productivity_trend(&m.commits_by_date, today);
 
     Some(UserEffortData {
         name: m.name.clone(),
@@ -494,6 +562,7 @@ pub fn build_user_effort_data(
         avg_lines_per_day,
         top_extensions: ext_vec,
         trends,
+        productivity_trend,
     })
 }
 
@@ -1303,5 +1372,144 @@ mod tests {
             build_user_effort_data(&repos, "alice@example.com", &no_settings(), today).unwrap();
         assert_eq!(effort.trends.reference_date, today);
         assert!((effort.trends.last_30d_avg - 3.0 / 30.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn build_productivity_trend_returns_thirteen_zero_filled_weeks() {
+        let map: BTreeMap<String, u32> = BTreeMap::new();
+        let data = build_productivity_trend(&map, "2026-04-15");
+        assert_eq!(data.reference_date, "2026-04-15");
+        assert_eq!(data.weeks.len(), PRODUCTIVITY_TREND_WEEKS);
+        assert!(data.weeks.iter().all(|w| w.commits == 0));
+        // window_end is the Monday of the week containing reference_date (2026-04-15 is a Wed)
+        assert_eq!(data.window_end, "2026-04-13");
+        // window_start is 12 weeks earlier
+        assert_eq!(data.window_start, "2026-01-19");
+    }
+
+    #[test]
+    fn build_productivity_trend_invalid_date_returns_empty() {
+        let map: BTreeMap<String, u32> = BTreeMap::new();
+        let data = build_productivity_trend(&map, "not-a-date");
+        assert_eq!(data.reference_date, "not-a-date");
+        assert!(data.weeks.is_empty());
+    }
+
+    #[test]
+    fn build_productivity_trend_buckets_commits_into_correct_week() {
+        let mut map = BTreeMap::new();
+        // 2026-04-13 is Monday of the week containing today (2026-04-15).
+        // 2026-04-15 is Wednesday of that same week.
+        // 2026-04-06 is Monday of the prior week.
+        map.insert("2026-04-13".to_string(), 5); // latest week
+        map.insert("2026-04-15".to_string(), 3); // latest week
+        map.insert("2026-04-06".to_string(), 2); // prior week
+        map.insert("2026-04-12".to_string(), 1); // Sunday of prior week
+
+        let data = build_productivity_trend(&map, "2026-04-15");
+        let last = data.weeks.last().unwrap();
+        assert_eq!(last.week_start, "2026-04-13");
+        assert_eq!(last.commits, 8);
+
+        let prev = &data.weeks[data.weeks.len() - 2];
+        assert_eq!(prev.week_start, "2026-04-06");
+        assert_eq!(prev.commits, 3);
+    }
+
+    #[test]
+    fn build_productivity_trend_ignores_commits_outside_window() {
+        let mut map = BTreeMap::new();
+        // 2026-01-19 is the first Monday in the window (13 weeks before 2026-04-13).
+        // Anything before that must be excluded.
+        map.insert("2026-01-18".to_string(), 999); // Sunday before window → out
+        map.insert("2026-01-19".to_string(), 4); // first day of window → in
+        let data = build_productivity_trend(&map, "2026-04-15");
+        let first = data.weeks.first().unwrap();
+        assert_eq!(first.week_start, "2026-01-19");
+        assert_eq!(first.commits, 4);
+        // Total across all weeks should not include the out-of-window 999
+        let total: u32 = data.weeks.iter().map(|w| w.commits).sum();
+        assert_eq!(total, 4);
+    }
+
+    #[test]
+    fn build_productivity_trend_sunday_reference_anchors_to_that_week() {
+        // 2026-04-19 is a Sunday → window_end is Monday 2026-04-13 of the same week.
+        let map: BTreeMap<String, u32> = BTreeMap::new();
+        let data = build_productivity_trend(&map, "2026-04-19");
+        assert_eq!(data.window_end, "2026-04-13");
+        assert_eq!(data.weeks.last().unwrap().week_start, "2026-04-13");
+    }
+
+    #[test]
+    fn build_productivity_trend_current_week_absorbs_future_dates() {
+        // today = Wed 2026-04-15 → current week spans 2026-04-13..=2026-04-19.
+        // Commits dated after `today` (e.g. from clock skew) still land in the current bucket.
+        let mut map = BTreeMap::new();
+        map.insert("2026-04-15".to_string(), 2); // today
+        map.insert("2026-04-17".to_string(), 5); // Friday (after today)
+        map.insert("2026-04-19".to_string(), 3); // Sunday (boundary of current week)
+        map.insert("2026-04-20".to_string(), 9); // Monday of *next* week → out of window
+
+        let data = build_productivity_trend(&map, "2026-04-15");
+        let last = data.weeks.last().unwrap();
+        assert_eq!(last.week_start, "2026-04-13");
+        assert_eq!(last.commits, 10); // 2 + 5 + 3
+    }
+
+    #[test]
+    fn build_overall_productivity_trend_merges_across_repos() {
+        let mut weekday = [0u32; 7];
+        weekday[0] = 1;
+        let hour = [0u32; 24];
+
+        let mut act_a = make_activity("alice@example.com", weekday, hour, &["2026-04-13"]);
+        act_a.commits_by_date.insert("2026-04-13".to_string(), 4);
+        let mut act_b = make_activity("bob@example.com", weekday, hour, &["2026-04-13"]);
+        act_b.commits_by_date.insert("2026-04-13".to_string(), 6);
+
+        let repo_a = make_repo(
+            "repo-a",
+            vec![make_contributor("alice@example.com", 4, 0, 0, 0)],
+            vec![act_a],
+            4,
+        );
+        let repo_b = make_repo(
+            "repo-b",
+            vec![make_contributor("bob@example.com", 6, 0, 0, 0)],
+            vec![act_b],
+            6,
+        );
+
+        let data = build_overall_productivity_trend(&[repo_a, repo_b], "2026-04-15");
+        let last = data.weeks.last().unwrap();
+        assert_eq!(last.commits, 10);
+    }
+
+    #[test]
+    fn build_user_effort_data_includes_productivity_trend() {
+        let mut weekday = [0u32; 7];
+        weekday[0] = 1;
+        let hour = [0u32; 24];
+
+        let today = "2026-04-15";
+        let mut act = make_activity("alice@example.com", weekday, hour, &["2026-04-13"]);
+        act.commits_by_date.insert("2026-04-13".to_string(), 7);
+
+        let repos = vec![make_repo(
+            "repo-a",
+            vec![make_contributor("alice@example.com", 7, 0, 0, 0)],
+            vec![act],
+            7,
+        )];
+
+        let effort =
+            build_user_effort_data(&repos, "alice@example.com", &no_settings(), today).unwrap();
+        assert_eq!(effort.productivity_trend.reference_date, today);
+        assert_eq!(
+            effort.productivity_trend.weeks.len(),
+            PRODUCTIVITY_TREND_WEEKS
+        );
+        assert_eq!(effort.productivity_trend.weeks.last().unwrap().commits, 7);
     }
 }

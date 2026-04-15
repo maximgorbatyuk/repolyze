@@ -61,6 +61,17 @@ pub fn add_days(date: &str, n: i32) -> String {
     format_ymd(y2, m2, d2)
 }
 
+/// Return the Monday of the week containing `date` as "YYYY-MM-DD", or `None` if the
+/// input is not a valid "YYYY-MM-DD" date.
+///
+/// Weeks are Monday-starting (matches `day_of_week` convention where 0=Monday), so a
+/// Sunday rolls back six days to the previous Monday.
+pub fn monday_of_week(date: &str) -> Option<String> {
+    let (y, m, d) = parse_ymd(date)?;
+    let dow = day_of_week(y, m, d) as i32;
+    Some(add_days(&format_ymd(y, m, d), -dow))
+}
+
 /// Three-letter month abbreviation.
 pub fn month_abbrev(month: u32) -> &'static str {
     match month {
@@ -171,6 +182,37 @@ mod tests {
         assert_eq!(format_unix_timestamp(0), "1970-01-01");
         assert_eq!(format_unix_timestamp(1704067200), "2024-01-01");
         assert_eq!(format_unix_timestamp(1710720000), "2024-03-18");
+    }
+
+    #[test]
+    fn monday_of_week_returns_same_date_for_monday() {
+        // 2025-01-13 is a Monday
+        assert_eq!(monday_of_week("2025-01-13").as_deref(), Some("2025-01-13"));
+    }
+
+    #[test]
+    fn monday_of_week_wednesday_rolls_back() {
+        // 2025-01-15 is a Wednesday → Monday 2025-01-13
+        assert_eq!(monday_of_week("2025-01-15").as_deref(), Some("2025-01-13"));
+    }
+
+    #[test]
+    fn monday_of_week_sunday_rolls_back_six_days() {
+        // 2025-01-19 is a Sunday → Monday 2025-01-13
+        assert_eq!(monday_of_week("2025-01-19").as_deref(), Some("2025-01-13"));
+    }
+
+    #[test]
+    fn monday_of_week_crosses_month_boundary() {
+        // 2025-03-01 is a Saturday → Monday 2025-02-24
+        assert_eq!(monday_of_week("2025-03-01").as_deref(), Some("2025-02-24"));
+    }
+
+    #[test]
+    fn monday_of_week_invalid_returns_none() {
+        assert!(monday_of_week("not-a-date").is_none());
+        assert!(monday_of_week("2025-13-01").is_none());
+        assert!(monday_of_week("").is_none());
     }
 
     #[test]

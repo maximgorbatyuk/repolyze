@@ -97,6 +97,83 @@ pub fn format_value_fit(value: u64, col_width: usize) -> String {
     }
 }
 
+/// Unicode block characters for sparkline bars, ordered from shortest (`▁`) to tallest (`█`).
+pub const SPARKLINE_BLOCKS: [&str; 8] = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+
+/// Height (rows) of the block-character sparkline charts used in plain-text and Markdown output.
+const SPARKLINE_CHART_HEIGHT: usize = 8;
+
+/// Render a bar chart of 8 block-character rows plus a value row and label row.
+///
+/// Layout (from top to bottom):
+/// 1. 8 sparkline rows, each using `SPARKLINE_BLOCKS` for fractional-height bars
+/// 2. A value row (centered per-column, abbreviated via [`format_value_fit`])
+/// 3. A label row (centered per-column, possibly truncated by [`fit_bar_dimensions`])
+///
+/// If every value is 0, returns `{labels joined by space}\n{empty_message}\n` so the caller still
+/// sees something useful. `max_width` is the total chart-area width (same semantics as
+/// [`fit_bar_dimensions`]).
+pub fn render_sparkline_bars(
+    bars: &[(String, u64)],
+    max_width: usize,
+    empty_message: &str,
+) -> String {
+    let max_val = bars.iter().map(|(_, v)| *v).max().unwrap_or(0);
+    if max_val == 0 {
+        let labels: String = bars
+            .iter()
+            .map(|(l, _)| l.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        return format!("{labels}\n{empty_message}\n");
+    }
+
+    let (col_width, gap, display_labels) = fit_bar_dimensions(bars, max_width);
+    let mut out = String::new();
+
+    for row in (0..SPARKLINE_CHART_HEIGHT).rev() {
+        let threshold = (row as f64 + 0.5) / SPARKLINE_CHART_HEIGHT as f64;
+        for (i, (_, value)) in bars.iter().enumerate() {
+            if i > 0 && gap > 0 {
+                out.push_str(&" ".repeat(gap));
+            }
+            let ratio = *value as f64 / max_val as f64;
+            if ratio >= threshold {
+                let block = if ratio >= threshold + 1.0 / SPARKLINE_CHART_HEIGHT as f64 {
+                    "█"
+                } else {
+                    let frac = ((ratio - threshold) * SPARKLINE_CHART_HEIGHT as f64 * 8.0).round()
+                        as usize;
+                    SPARKLINE_BLOCKS[frac.min(7)]
+                };
+                out.push_str(&block.repeat(col_width));
+            } else {
+                out.push_str(&" ".repeat(col_width));
+            }
+        }
+        out.push('\n');
+    }
+
+    for (i, (_, value)) in bars.iter().enumerate() {
+        if i > 0 && gap > 0 {
+            out.push_str(&" ".repeat(gap));
+        }
+        let text = format_value_fit(*value, col_width);
+        out.push_str(&format!("{:^col_width$}", text));
+    }
+    out.push('\n');
+
+    for (i, label) in display_labels.iter().enumerate() {
+        if i > 0 && gap > 0 {
+            out.push_str(&" ".repeat(gap));
+        }
+        out.push_str(&format!("{:^col_width$}", label));
+    }
+    out.push('\n');
+
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,5 +251,33 @@ mod tests {
             .collect();
         let (cw, _, _) = fit_bar_dimensions(&bars, 80);
         assert!(cw >= 3, "col_width {cw} should accommodate 3-digit values");
+    }
+
+    #[test]
+    fn render_sparkline_bars_all_zero_returns_empty_message() {
+        let bars = vec![("A".to_string(), 0u64), ("B".to_string(), 0u64)];
+        let out = render_sparkline_bars(&bars, 80, "(no data)");
+        assert!(out.contains("(no data)"));
+        assert!(!out.contains('█'));
+    }
+
+    #[test]
+    fn render_sparkline_bars_renders_tallest_block_for_max_value() {
+        let bars = vec![("A".to_string(), 1u64), ("B".to_string(), 10u64)];
+        let out = render_sparkline_bars(&bars, 80, "(no data)");
+        assert!(out.contains('█'));
+        // Value row contains both values
+        assert!(out.contains("10"));
+        // Label row contains labels
+        assert!(out.contains('A'));
+        assert!(out.contains('B'));
+    }
+
+    #[test]
+    fn render_sparkline_bars_produces_ten_lines_when_values_nonzero() {
+        // 8 sparkline rows + 1 value row + 1 label row = 10 newline-terminated lines.
+        let bars = vec![("A".to_string(), 5u64), ("B".to_string(), 10u64)];
+        let out = render_sparkline_bars(&bars, 80, "(no data)");
+        assert_eq!(out.matches('\n').count(), 10);
     }
 }

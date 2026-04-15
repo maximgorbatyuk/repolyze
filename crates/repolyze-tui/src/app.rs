@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use repolyze_core::model::{
-    BarChartData, ComparisonReport, HeatmapData, PartialFailure, TimelineData,
+    BarChartData, ComparisonReport, HeatmapData, PartialFailure, ProductivityTrendData,
+    TimelineData,
 };
 use repolyze_git::branches::BranchInfo;
 
@@ -324,6 +325,7 @@ pub struct AppState {
     pub weekday_chart: Option<BarChartData>,
     pub hourly_chart: Option<BarChartData>,
     pub timeline_data: Option<TimelineData>,
+    pub productivity_trend_data: Option<ProductivityTrendData>,
     pub git_tools: GitToolsState,
 }
 
@@ -371,6 +373,7 @@ impl AppState {
             weekday_chart: None,
             hourly_chart: None,
             timeline_data: None,
+            productivity_trend_data: None,
             git_tools: GitToolsState::new(),
         }
     }
@@ -415,6 +418,7 @@ impl AppState {
         self.weekday_chart = None;
         self.hourly_chart = None;
         self.timeline_data = None;
+        self.productivity_trend_data = None;
         self.metadata_text = None;
         self.workspace_info = None;
         self.is_loading = false;
@@ -439,6 +443,7 @@ impl AppState {
             self.weekday_chart = None;
             self.hourly_chart = None;
             self.timeline_data = None;
+            self.productivity_trend_data = None;
             self.pending_action = Some(AppAction::StartAnalyze {
                 paths: self.input_paths.clone(),
                 view: self.selected_analyze_view.clone(),
@@ -455,6 +460,7 @@ impl AppState {
             self.weekday_chart = None;
             self.hourly_chart = None;
             self.timeline_data = None;
+            self.productivity_trend_data = None;
             self.scroll_offset = 0;
             self.input_paths.clear();
             self.input_buffer.clear();
@@ -865,6 +871,7 @@ mod tests {
             },
             failures: vec![],
             trends: repolyze_core::model::TrendsData::default(),
+            productivity_trend: repolyze_core::model::ProductivityTrendData::default(),
         });
         app.analysis_table = Some("stale".to_string());
         app.input_buffer = "old".to_string();
@@ -1136,6 +1143,7 @@ mod tests {
             },
             failures: vec![],
             trends: repolyze_core::model::TrendsData::default(),
+            productivity_trend: repolyze_core::model::ProductivityTrendData::default(),
         });
         app.is_loading = true;
         app.request_export();
@@ -1155,6 +1163,7 @@ mod tests {
             },
             failures: vec![],
             trends: repolyze_core::model::TrendsData::default(),
+            productivity_trend: repolyze_core::model::ProductivityTrendData::default(),
         });
         app.request_export();
         assert_eq!(app.pending_action, Some(AppAction::ExportMarkdown));

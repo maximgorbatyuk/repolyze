@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::analytics::build_overall_trends;
+use crate::analytics::{build_overall_productivity_trend, build_overall_trends};
 use crate::date_util;
 use crate::model::{ComparisonReport, ComparisonSummary, PartialFailure, RepositoryAnalysis};
 use crate::settings::Settings;
@@ -12,13 +12,16 @@ pub fn build_comparison_report(
     settings: &Settings,
 ) -> ComparisonReport {
     let summary = build_summary(&results, settings);
-    let trends = build_overall_trends(&results, &date_util::today_ymd());
+    let today = date_util::today_ymd();
+    let trends = build_overall_trends(&results, &today);
+    let productivity_trend = build_overall_productivity_trend(&results, &today);
 
     ComparisonReport {
         repositories: results,
         summary,
         failures,
         trends,
+        productivity_trend,
     }
 }
 

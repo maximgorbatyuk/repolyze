@@ -11,8 +11,8 @@ use repolyze_metrics::FilesystemMetricsBackend;
 use repolyze_report::json::render_json;
 use repolyze_report::markdown::render_markdown;
 use repolyze_report::table::{
-    render_analysis_header, render_contribution_table, render_user_activity_table,
-    render_user_effort_table,
+    render_analysis_header, render_contribution_table, render_productivity_trend_chart,
+    render_user_activity_table, render_user_effort_table,
 };
 
 use crate::args::{AnalyzeView, OutputFormat};
@@ -72,7 +72,9 @@ pub fn run_analyze(
             let today = date_util::today_ymd();
             let effort = build_user_effort_data(&report.repositories, email, settings, &today)
                 .ok_or_else(|| anyhow::anyhow!("no data found for email '{email}'"))?;
-            Ok(format!("{header}{}", render_user_effort_table(&effort)))
+            let table = render_user_effort_table(&effort);
+            let chart = render_productivity_trend_chart(&effort.productivity_trend);
+            Ok(format!("{header}{table}\n{chart}"))
         }
         _ => Err(anyhow::anyhow!("unsupported view/format combination")),
     }

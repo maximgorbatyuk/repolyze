@@ -1,9 +1,10 @@
 use std::time::Duration;
 
 use repolyze_core::analytics::RepoComparisonRow;
+use repolyze_core::chart_util::render_sparkline_bars;
 use repolyze_core::model::{
-    ContributionRow, RepositoryAnalysis, TrendsData, UserActivityRow, UserEffortData,
-    format_trend_change,
+    ContributionRow, ProductivityTrendData, RepositoryAnalysis, TrendsData, UserActivityRow,
+    UserEffortData, format_trend_change,
 };
 
 pub const CONTRIBUTION_TITLE: &str = "Contribution";
@@ -26,6 +27,8 @@ pub const USER_EFFORT_DESC: &str =
     "Detailed activity and productivity metrics for a single contributor.";
 
 pub const TRENDS_TITLE: &str = "Trends";
+
+pub const PRODUCTIVITY_TREND_TITLE: &str = "Productivity Trend";
 
 /// Build a summary header showing period, repo count, folder, mode, and elapsed time.
 pub fn render_analysis_header(
@@ -353,6 +356,48 @@ pub fn render_user_effort_table(data: &UserEffortData) -> String {
     out
 }
 
+const PRODUCTIVITY_TREND_CHART_WIDTH: usize = 80;
+
+/// Render a weekly productivity-trend bar chart for plain-text table output.
+///
+/// Each bar is a calendar week (Monday-starting); the chart covers the last 13 weeks
+/// anchored at `data.reference_date`. The final bar represents the *current* calendar
+/// week and may be partial if `reference_date` falls before Sunday. Returns an empty
+/// string when there are no weeks.
+pub fn render_productivity_trend_chart(data: &ProductivityTrendData) -> String {
+    if data.weeks.is_empty() {
+        return String::new();
+    }
+
+    let mut out = String::from("Productivity Trend (commits per week, last 13 weeks)\n");
+    if !data.reference_date.is_empty() {
+        out.push_str(&format!("Reference date: {}\n", data.reference_date));
+    }
+    out.push_str("Weeks start Monday; the final bar may be a partial week.\n\n");
+
+    let bars: Vec<(String, u64)> = data
+        .weeks
+        .iter()
+        .map(|w| (week_label(&w.week_start), w.commits as u64))
+        .collect();
+    out.push_str(&render_sparkline_bars(
+        &bars,
+        PRODUCTIVITY_TREND_CHART_WIDTH,
+        "(no commits in window)",
+    ));
+    out
+}
+
+/// Short "MM-DD" label from a "YYYY-MM-DD" date. Returns the input unchanged if it's shorter
+/// than 10 chars (unexpected input — shouldn't happen from `date_util::format_ymd`).
+fn week_label(ymd: &str) -> String {
+    if ymd.len() >= 10 {
+        ymd[5..10].to_string()
+    } else {
+        ymd.to_string()
+    }
+}
+
 /// Render a trends sub-table showing average commits/day for current vs previous windows.
 pub fn render_trends_table(trends: &TrendsData) -> String {
     let mut out = String::from("Trends (avg commits per calendar day)\n");
@@ -609,6 +654,7 @@ mod tests {
                 ("toml".to_string(), 12),
             ],
             trends: repolyze_core::model::TrendsData::default(),
+            productivity_trend: repolyze_core::model::ProductivityTrendData::default(),
         };
 
         let table = render_user_effort_table(&data);
@@ -652,6 +698,7 @@ mod tests {
                 prev_90d_avg: 0.0,
                 change_90d_pct: None,
             },
+            productivity_trend: repolyze_core::model::ProductivityTrendData::default(),
         };
 
         let table = render_user_effort_table(&data);
@@ -662,5 +709,66 @@ mod tests {
         assert!(table.contains("—"));
         // No markdown pipes — consistent with other tables
         assert!(!table.contains('|'));
+    }
+
+    #[test]
+    fn render_productivity_trend_chart_renders_bars_and_labels() {
+        let weeks = vec![
+            repolyze_core::model::WeekBucket {
+                week_start: "2026-04-06".to_string(),
+                commits: 3,
+            },
+            repolyze_core::model::WeekBucket {
+                week_start: "2026-04-13".to_string(),
+                commits: 8,
+            },
+        ];
+        let data = repolyze_core::model::ProductivityTrendData {
+            reference_date: "2026-04-15".to_string(),
+            window_start: "2026-04-06".to_string(),
+            window_end: "2026-04-13".to_string(),
+            weeks,
+        };
+
+        let chart = render_productivity_trend_chart(&data);
+        assert!(chart.contains("Productivity Trend"));
+        assert!(chart.contains("Reference date: 2026-04-15"));
+        assert!(chart.contains("last 13 weeks"));
+        assert!(chart.contains("partial week"));
+        assert!(chart.contains("04-06"));
+        assert!(chart.contains("04-13"));
+        assert!(chart.contains("█"));
+        // Commit count should be shown
+        assert!(chart.contains('8'));
+    }
+
+    #[test]
+    fn render_productivity_trend_chart_empty_weeks() {
+        let data = repolyze_core::model::ProductivityTrendData::default();
+        assert!(render_productivity_trend_chart(&data).is_empty());
+    }
+
+    #[test]
+    fn render_productivity_trend_chart_all_zero() {
+        let weeks = vec![
+            repolyze_core::model::WeekBucket {
+                week_start: "2026-04-06".to_string(),
+                commits: 0,
+            },
+            repolyze_core::model::WeekBucket {
+                week_start: "2026-04-13".to_string(),
+                commits: 0,
+            },
+        ];
+        let data = repolyze_core::model::ProductivityTrendData {
+            reference_date: "2026-04-15".to_string(),
+            window_start: "2026-04-06".to_string(),
+            window_end: "2026-04-13".to_string(),
+            weeks,
+        };
+
+        let chart = render_productivity_trend_chart(&data);
+        assert!(chart.contains("(no commits in window)"));
+        assert!(!chart.contains('█'));
     }
 }

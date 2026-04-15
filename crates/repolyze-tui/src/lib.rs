@@ -20,7 +20,9 @@ use repolyze_core::analytics::{
     build_weekday_chart_data,
 };
 use repolyze_core::input::{resolve_inputs_with_failures, resolve_single_input};
-use repolyze_core::model::{BarChartData, ComparisonReport, HeatmapData, TimelineData};
+use repolyze_core::model::{
+    BarChartData, ComparisonReport, HeatmapData, ProductivityTrendData, TimelineData,
+};
 use repolyze_core::service::analyze_targets_with_store;
 use repolyze_core::settings::Settings;
 use repolyze_git::backend::GitCliBackend;
@@ -42,6 +44,7 @@ struct AnalysisCompletion {
     weekday_chart: Option<BarChartData>,
     hourly_chart: Option<BarChartData>,
     timeline_data: Option<TimelineData>,
+    productivity_trend_data: Option<ProductivityTrendData>,
     failure_count: usize,
     error_message: Option<String>,
     elapsed: Duration,
@@ -361,12 +364,14 @@ where
                     },
                     failures: vec![],
                     trends: repolyze_core::model::TrendsData::default(),
+                    productivity_trend: repolyze_core::model::ProductivityTrendData::default(),
                 },
                 table_text: String::new(),
                 heatmap_data: None,
                 weekday_chart: None,
                 hourly_chart: None,
                 timeline_data: None,
+                productivity_trend_data: None,
                 failure_count: 0,
                 error_message: Some(format!("Analysis failed: failed to open database: {error}")),
                 elapsed: Duration::ZERO,
@@ -394,6 +399,7 @@ where
     let mut weekday_chart = None;
     let mut hourly_chart = None;
     let mut timeline_data = None;
+    let mut productivity_trend_data = None;
 
     let table_body = match view {
         AnalyzeView::Contribution => {
@@ -447,7 +453,7 @@ where
                 let comparison = build_repo_comparison(&report.repositories);
                 let table = render_repo_comparison_table(&comparison);
                 if !table.is_empty() {
-                    combined.push_str(&format!("\n\n#4 {COMPARE_REPOS_TITLE}\n\n"));
+                    combined.push_str(&format!("\n\n#5 {COMPARE_REPOS_TITLE}\n\n"));
                     combined.push_str(&table);
                 }
             }
@@ -460,6 +466,7 @@ where
             weekday_chart = Some(build_weekday_chart_data(&report.repositories));
             hourly_chart = Some(build_hourly_chart_data(&report.repositories));
             timeline_data = Some(build_timeline_data(&report.repositories));
+            productivity_trend_data = Some(report.productivity_trend.clone());
             combined
         }
     };
@@ -471,6 +478,7 @@ where
         weekday_chart,
         hourly_chart,
         timeline_data,
+        productivity_trend_data,
         failure_count,
         error_message: None,
         elapsed,
@@ -497,6 +505,7 @@ fn apply_analysis_completion(
     app.weekday_chart = completion.weekday_chart;
     app.hourly_chart = completion.hourly_chart;
     app.timeline_data = completion.timeline_data;
+    app.productivity_trend_data = completion.productivity_trend_data;
     app.set_result(completion.report);
     if completion.failure_count > 0 {
         app.status_message = format!(
@@ -698,9 +707,11 @@ fn render_user_effort_for_selected(app: &mut AppState, settings: &Settings) {
         app.analysis_table = Some(format!("{header}{table_body}"));
         let hm = build_heatmap_data(repos, Some(&identifier), &today, settings);
         app.heatmap_data = Some(hm);
+        app.productivity_trend_data = Some(effort.productivity_trend);
     } else {
         app.analysis_table = Some(format!("{header}No data found for {identifier}"));
         app.heatmap_data = None;
+        app.productivity_trend_data = None;
     }
     app.scroll_offset = 0;
 }
@@ -1084,6 +1095,7 @@ mod tests {
             },
             failures: vec![],
             trends: repolyze_core::model::TrendsData::default(),
+            productivity_trend: repolyze_core::model::ProductivityTrendData::default(),
         });
 
         export_markdown(&mut app, &Settings::default());

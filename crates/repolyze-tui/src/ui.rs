@@ -13,8 +13,8 @@ use ratatui::{
 };
 
 use repolyze_core::chart_util::{fit_bar_dimensions, format_value_fit};
-use repolyze_core::model::{BarChartData, HeatmapData, TimelineData};
-use repolyze_report::table::{HEATMAP_DESC, HEATMAP_TITLE};
+use repolyze_core::model::{BarChartData, HeatmapData, ProductivityTrendData, TimelineData};
+use repolyze_report::table::{HEATMAP_DESC, HEATMAP_TITLE, PRODUCTIVITY_TREND_TITLE};
 
 use crate::app::{
     ANALYZE_MENU_ITEMS, AnalyzeView, AppState, BranchProgress, GIT_TOOLS_MENU_ITEMS, GitToolsMode,
@@ -335,6 +335,27 @@ fn draw_analyze_text(frame: &mut Frame, app: &mut AppState, area: Rect) {
             lines.push(Line::from(format!(" {table_line}")));
         }
 
+        // Append productivity-trend chart if present (styled cyan bars)
+        if let Some(data) = &app.productivity_trend_data {
+            lines.push(Line::from(""));
+            if app.selected_analyze_view == AnalyzeView::All {
+                lines.push(Line::from(format!(" #4 {PRODUCTIVITY_TREND_TITLE}")));
+            } else {
+                lines.push(Line::from(format!(" {PRODUCTIVITY_TREND_TITLE}")));
+            }
+            lines.push(Line::from(
+                " Commits per week over the last 13 weeks; final bar may be a partial week.",
+            ));
+            if !data.reference_date.is_empty() {
+                lines.push(Line::from(format!(
+                    " Reference date: {}",
+                    data.reference_date
+                )));
+            }
+            lines.push(Line::from(""));
+            lines.extend(text_productivity_trend_lines(data, area.width));
+        }
+
         // Append heatmap if present
         if let Some(data) = &app.heatmap_data {
             lines.push(Line::from(""));
@@ -416,11 +437,10 @@ fn draw_analyze_text(frame: &mut Frame, app: &mut AppState, area: Rect) {
 
 const SPARKLINE_BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
-fn vertical_bar_lines(data: &BarChartData, max_width: u16) -> Vec<Line<'static>> {
-    let max_val = data.bars.iter().map(|(_, v)| *v).max().unwrap_or(0);
+fn vertical_bar_lines_from_bars(bars: &[(String, u64)], max_width: u16) -> Vec<Line<'static>> {
+    let max_val = bars.iter().map(|(_, v)| *v).max().unwrap_or(0);
     if max_val == 0 {
-        let labels: String = data
-            .bars
+        let labels: String = bars
             .iter()
             .map(|(l, _)| l.as_str())
             .collect::<Vec<_>>()
@@ -436,14 +456,14 @@ fn vertical_bar_lines(data: &BarChartData, max_width: u16) -> Vec<Line<'static>>
 
     // Reserve 1 char for the leading padding space emitted on every row below.
     let chart_area = max_width.saturating_sub(1) as usize;
-    let (col_width, gap, display_labels) = fit_bar_dimensions(&data.bars, chart_area);
+    let (col_width, gap, display_labels) = fit_bar_dimensions(bars, chart_area);
 
     let chart_height: usize = 8;
     let mut lines = Vec::new();
     for row in (0..chart_height).rev() {
         let threshold = (row as f64 + 0.5) / chart_height as f64;
         let mut spans: Vec<Span<'static>> = vec![Span::raw(" ")];
-        for (i, (_, value)) in data.bars.iter().enumerate() {
+        for (i, (_, value)) in bars.iter().enumerate() {
             if i > 0 && gap > 0 {
                 spans.push(Span::raw(" ".repeat(gap)));
             }
@@ -465,7 +485,7 @@ fn vertical_bar_lines(data: &BarChartData, max_width: u16) -> Vec<Line<'static>>
     }
 
     let mut val_spans: Vec<Span<'static>> = vec![Span::raw(" ")];
-    for (i, (_, value)) in data.bars.iter().enumerate() {
+    for (i, (_, value)) in bars.iter().enumerate() {
         if i > 0 && gap > 0 {
             val_spans.push(Span::raw(" ".repeat(gap)));
         }
@@ -490,7 +510,33 @@ fn vertical_bar_lines(data: &BarChartData, max_width: u16) -> Vec<Line<'static>>
 }
 
 fn text_bar_chart_lines(data: &BarChartData, max_width: u16) -> Vec<Line<'static>> {
-    vertical_bar_lines(data, max_width)
+    vertical_bar_lines_from_bars(&data.bars, max_width)
+}
+
+/// Render a productivity-trend chart with cyan-styled bars, matching the other TUI charts.
+///
+/// Takes the weekly series, converts it to `MM-DD`-labeled bars, and delegates to the
+/// shared bar renderer. Returns an empty vec when the data has no weeks.
+fn text_productivity_trend_lines(
+    data: &ProductivityTrendData,
+    max_width: u16,
+) -> Vec<Line<'static>> {
+    if data.weeks.is_empty() {
+        return Vec::new();
+    }
+    let bars: Vec<(String, u64)> = data
+        .weeks
+        .iter()
+        .map(|w| {
+            let label = if w.week_start.len() >= 10 {
+                w.week_start[5..10].to_string()
+            } else {
+                w.week_start.clone()
+            };
+            (label, w.commits as u64)
+        })
+        .collect();
+    vertical_bar_lines_from_bars(&bars, max_width)
 }
 
 fn text_timeline_lines(data: &TimelineData, width: u16) -> Vec<Line<'static>> {
@@ -1377,5 +1423,73 @@ fn format_delete_detail(p: &BranchProgress) -> String {
         "no action".to_string()
     } else {
         parts.join(", ")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use repolyze_core::model::WeekBucket;
+
+    /// Walk all spans in `lines` and return `true` if any carries `Color::Cyan` as its fg.
+    fn any_span_is_cyan(lines: &[Line<'_>]) -> bool {
+        lines
+            .iter()
+            .any(|line| line.spans.iter().any(|s| s.style.fg == Some(Color::Cyan)))
+    }
+
+    #[test]
+    fn text_productivity_trend_lines_renders_cyan_bars() {
+        let data = ProductivityTrendData {
+            reference_date: "2026-04-15".to_string(),
+            window_start: "2026-04-06".to_string(),
+            window_end: "2026-04-13".to_string(),
+            weeks: vec![
+                WeekBucket {
+                    week_start: "2026-04-06".to_string(),
+                    commits: 3,
+                },
+                WeekBucket {
+                    week_start: "2026-04-13".to_string(),
+                    commits: 8,
+                },
+            ],
+        };
+        let lines = text_productivity_trend_lines(&data, 80);
+        assert!(!lines.is_empty());
+        assert!(
+            any_span_is_cyan(&lines),
+            "expected at least one span styled with Color::Cyan"
+        );
+    }
+
+    #[test]
+    fn text_productivity_trend_lines_empty_weeks_returns_empty() {
+        let lines = text_productivity_trend_lines(&ProductivityTrendData::default(), 80);
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn text_productivity_trend_lines_all_zero_no_cyan() {
+        // All-zero data falls through to the "(no data)" placeholder path which must not emit
+        // any colored bars (nothing to color).
+        let data = ProductivityTrendData {
+            reference_date: "2026-04-15".to_string(),
+            window_start: "2026-04-06".to_string(),
+            window_end: "2026-04-13".to_string(),
+            weeks: vec![
+                WeekBucket {
+                    week_start: "2026-04-06".to_string(),
+                    commits: 0,
+                },
+                WeekBucket {
+                    week_start: "2026-04-13".to_string(),
+                    commits: 0,
+                },
+            ],
+        };
+        let lines = text_productivity_trend_lines(&data, 80);
+        assert!(!lines.is_empty());
+        assert!(!any_span_is_cyan(&lines));
     }
 }

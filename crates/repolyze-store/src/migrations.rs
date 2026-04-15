@@ -3,8 +3,9 @@ pub const MIGRATIONS: &[(i32, &str)] = &[(1, MIGRATION_V1)];
 // Bump this to invalidate cached analysis_payload_json snapshots.
 // No SQL migration needed — extension data lives inside the JSON blob.
 // v2: initial schema, v3: added file_extensions to ContributorStats,
-// v4: RepositoryTarget changed from struct to enum (Local/GitHub).
-pub const SCHEMA_VERSION: i32 = 4;
+// v4: RepositoryTarget changed from struct to enum (Local/GitHub),
+// v5: added productivity_trend to ComparisonReport and UserEffortData.
+pub const SCHEMA_VERSION: i32 = 5;
 
 const MIGRATION_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS app_settings (
